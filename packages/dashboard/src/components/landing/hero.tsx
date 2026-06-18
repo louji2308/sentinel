@@ -37,18 +37,18 @@ export function Hero() {
 
         <div className="relative flex items-center justify-center">
           {/* The 3D crystal sits centered, overlapping the word */}
-          <div className="pointer-events-none absolute left-1/2 top-1/2 z-20 h-[clamp(320px,46vw,560px)] w-[clamp(320px,46vw,560px)] -translate-x-1/2 -translate-y-1/2 animate-scale delay-3">
+          <div className="pointer-events-none absolute left-1/2 top-[44%] z-20 h-[clamp(260px,30vw,400px)] w-[clamp(260px,30vw,400px)] -translate-x-1/2 -translate-y-1/2 animate-scale delay-3">
             <CrystalScene />
           </div>
 
-          <h1 className="animate-clip delay-2 select-none text-center font-sans text-[clamp(4.5rem,17vw,15rem)] font-extralight leading-[0.85] tracking-tight text-foreground">
+          <h1 className="animate-clip delay-2 relative select-none text-center font-sans text-[clamp(4.5rem,17vw,15rem)] font-extralight leading-[0.85] tracking-tight text-foreground">
             <span className="gold-text font-semibold">GOV</span>
             <span className="opacity-90">RNED</span>
           </h1>
         </div>
 
         {/* Floating bottom row: stat card · copy · trusted-by */}
-        <div className="mt-6 grid gap-5 md:grid-cols-12 md:items-end">
+        <div className="relative z-30 mt-12 grid gap-5 md:grid-cols-12 md:items-end">
           {/* Stat card */}
           <div className="animate-rise delay-5 glass edge-highlight flex items-center gap-4 rounded-3xl p-3 md:col-span-4">
             <div className="relative h-20 w-24 shrink-0 overflow-hidden rounded-2xl">
