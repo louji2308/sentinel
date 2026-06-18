@@ -1,5 +1,6 @@
 import {
   T3nClient,
+  TenantClient,
   loadWasmComponent,
   setEnvironment,
   createEthAuthInput,
@@ -56,13 +57,16 @@ export async function createAuthenticatedClient(
   return { client, did, address };
 }
 
-export async function createTenantClient(baseClient: AuthenticatedClient) {
-  const { client } = baseClient;
-  if (typeof (client as any).tenant === "undefined") {
-    throw new Error(
-      "TenantClient not available — ensure the SDK version supports tenant operations " +
-      "and T3N_API_KEY is set correctly."
-    );
-  }
-  return (client as any).tenant;
+export async function createTenantClient(
+  baseClient: AuthenticatedClient,
+  tenantDid?: string,
+  baseUrl?: string
+): Promise<TenantClient> {
+  const tenantClient = new TenantClient({
+    environment: (process.env.T3N_ENVIRONMENT as any) ?? "testnet",
+    t3n: baseClient.client,
+    tenantDid,
+    baseUrl,
+  });
+  return tenantClient;
 }

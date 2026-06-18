@@ -152,19 +152,26 @@ export async function evaluatePolicy(
   let matchedPolicyId = "global-constraints.global-revoked-deny";
 
   try {
-    await cedar.default?.();
-
     const result = cedar.isAuthorized({
       policies: policyText,
-      entities: JSON.stringify(entities),
-      principal: JSON.stringify(cedarRequest.principal),
-      action: JSON.stringify(cedarRequest.action),
-      resource: JSON.stringify(cedarRequest.resource),
-      context: JSON.stringify(cedarRequest.context),
+      entities,
+      principal: cedarRequest.principal,
+      action: cedarRequest.action,
+      resource: cedarRequest.resource,
+      context: cedarRequest.context,
     });
 
-    decision = result.decision === "Allow" ? "PERMIT" : "DENY";
-    matchedPolicyId = result.diagnostics?.reasons?.[0] ?? "unknown";
+    if (result.type === "failure") {
+      return {
+        decision: "DENY",
+        matchedPolicyId: "eval-error",
+        reason: `Policy evaluation failed: ${result.errors.map(e => e.error ?? e).join("; ")}. Defaulting to DENY (fail-closed).`,
+        policyHash,
+      };
+    }
+
+    decision = result.response.decision === "allow" ? "PERMIT" : "DENY";
+    matchedPolicyId = result.response.diagnostics?.reason?.[0] ?? "unknown";
   } catch (cedarError: any) {
     console.error("[Cedar] Evaluation error — defaulting to DENY:", cedarError.message);
     return {
