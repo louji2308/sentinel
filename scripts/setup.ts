@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { getNodeUrl } from "@terminal3/t3n-sdk";
 import { createAuthenticatedClient, createTenantClient } from "../packages/t3-client/src/client.js";
 
 async function main() {
@@ -19,8 +20,10 @@ async function main() {
   const authClient = await createAuthenticatedClient(apiKey, environment);
 
   let tenantDid = existingDid;
+  const baseUrl = process.env.T3N_BASE_URL || getNodeUrl();
+  console.log(`[Setup] T3N node: ${baseUrl}`);
 
-  const tenantClient = await createTenantClient(authClient, tenantDid);
+  const tenantClient = await createTenantClient(authClient, tenantDid, baseUrl);
 
   console.log("[Setup] Checking tenant status...");
   try {

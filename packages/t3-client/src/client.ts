@@ -48,7 +48,7 @@ export async function createAuthenticatedClient(
 
   const authResult = await client.authenticate(createEthAuthInput(address));
 
-  const did = authResult.did?.value ?? authResult.did;
+  const did = authResult.value ?? authResult.did?.value ?? authResult.did;
   if (!did || !did.startsWith("did:t3n:")) {
     throw new Error(`Authentication produced invalid DID: ${JSON.stringify(did)}`);
   }
