@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Card, DecisionBadge } from "../../components/ui";
+import { Card, DecisionBadge, Table, Td } from "../../components/ui";
+import { AppHeader } from "../../components/app-header";
 import { fetchAuditLog, fetchReceipt, type AuditEntry } from "../../lib/api";
 
 export default function AuditPage() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [verifying, setVerifying] = useState<string | null>(null);
   const [verification, setVerification] = useState<any>(null);
 
   useEffect(() => {
@@ -14,7 +14,6 @@ export default function AuditPage() {
   }, []);
 
   async function handleVerify(receiptId: string) {
-    setVerifying(receiptId);
     try {
       const result = await fetchReceipt(receiptId);
       setVerification(result.verification);
@@ -23,72 +22,63 @@ export default function AuditPage() {
     }
   }
 
-  if (loading) return <p>Loading...</p>;
-
   return (
-    <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>Audit Log</h1>
+    <div className="min-h-screen">
+      <AppHeader />
+      <main className="mx-auto max-w-6xl px-4 py-10">
+        <div className="animate-rise mb-1 text-sm tracking-ultra text-gold">TAMPER-EVIDENT LEDGER</div>
+        <h1 className="animate-rise delay-1 mb-8 text-4xl font-light">Audit Log</h1>
 
-      {verification && (
-        <Card title="Receipt Verification" style={{ borderLeft: `4px solid ${verification.valid ? "#16a34a" : "#dc2626"}` }}>
-          <pre style={{ fontSize: 12, fontFamily: "monospace", whiteSpace: "pre-wrap", margin: 0 }}>
-            {JSON.stringify(verification, null, 2)}
-          </pre>
-          <button
-            onClick={() => setVerification(null)}
-            style={{ marginTop: 8, padding: "4px 12px", fontSize: 12, border: "1px solid #d1d5db", borderRadius: 4, background: "#fff", cursor: "pointer" }}
+        {verification && (
+          <Card
+            title="Receipt Verification"
+            className={`animate-scale mb-6 border-l-4 ${
+              verification.valid ? "border-l-permit" : "border-l-deny"
+            }`}
           >
-            Close
-          </button>
-        </Card>
-      )}
+            <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-xs text-foreground/80">
+              {JSON.stringify(verification, null, 2)}
+            </pre>
+            <button
+              onClick={() => setVerification(null)}
+              className="mt-4 rounded-full border border-white/15 px-4 py-1.5 text-xs text-muted transition hover:bg-white/5 hover:text-foreground"
+            >
+              Close
+            </button>
+          </Card>
+        )}
 
-      <Card>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead>
-            <tr style={{ borderBottom: "2px solid #e5e7eb", color: "#6b7280", textAlign: "left" }}>
-              <th style={{ padding: "8px 12px" }}>Time</th>
-              <th style={{ padding: "8px 12px" }}>Agent</th>
-              <th style={{ padding: "8px 12px" }}>Action</th>
-              <th style={{ padding: "8px 12px" }}>Decision</th>
-              <th style={{ padding: "8px 12px" }}>Clause</th>
-              <th style={{ padding: "8px 12px" }}>Receipt</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entries.map((e) => (
-              <tr key={e.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                <td style={{ padding: "8px 12px", fontSize: 12, color: "#6b7280" }}>
-                  {new Date(e.timestamp).toLocaleString()}
-                </td>
-                <td style={{ padding: "8px 12px", fontFamily: "monospace", fontSize: 11 }}>
-                  {e.agentDid.split(":").pop()?.slice(0, 16)}...
-                </td>
-                <td style={{ padding: "8px 12px" }}>{e.action.type}</td>
-                <td style={{ padding: "8px 12px" }}>
-                  <DecisionBadge decision={e.decision} />
-                </td>
-                <td style={{ padding: "8px 12px", fontFamily: "monospace", fontSize: 11 }}>{e.policyClause}</td>
-                <td style={{ padding: "8px 12px" }}>
-                  <button
-                    onClick={() => handleVerify(e.receiptId)}
-                    style={{
-                      padding: "2px 8px",
-                      fontSize: 11,
-                      border: "1px solid #d1d5db",
-                      borderRadius: 4,
-                      background: "#fff",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Verify
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+        {loading ? (
+          <div className="flex items-center gap-3 text-muted">
+            <span className="h-4 w-4 animate-spin-slow rounded-full border-2 border-gold/30 border-t-gold" />
+            Loading audit trail…
+          </div>
+        ) : (
+          <Card className="animate-fade delay-2">
+            <Table head={["Time", "Agent", "Action", "Decision", "Clause", "Receipt"]}>
+              {entries.map((e) => (
+                <tr key={e.id} className="border-t border-white/5 transition hover:bg-white/[0.03]">
+                  <Td muted>{new Date(e.timestamp).toLocaleString()}</Td>
+                  <Td mono>{e.agentDid.split(":").pop()?.slice(0, 16)}…</Td>
+                  <Td>{e.action.type}</Td>
+                  <Td>
+                    <DecisionBadge decision={e.decision} />
+                  </Td>
+                  <Td mono>{e.policyClause}</Td>
+                  <Td>
+                    <button
+                      onClick={() => handleVerify(e.receiptId)}
+                      className="rounded-full border border-gold/30 bg-gold/10 px-4 py-1.5 text-xs font-medium text-gold-bright transition hover:bg-gold/20"
+                    >
+                      Verify
+                    </button>
+                  </Td>
+                </tr>
+              ))}
+            </Table>
+          </Card>
+        )}
+      </main>
     </div>
   );
 }

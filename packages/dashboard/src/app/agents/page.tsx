@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Card, StatusDot } from "../../components/ui";
+import { Card, StatusDot, Table, Td } from "../../components/ui";
+import { AppHeader } from "../../components/app-header";
 import { fetchAgents, revokeAgent, type AgentInfo } from "../../lib/api";
 
 export default function AgentsPage() {
@@ -16,67 +17,58 @@ export default function AgentsPage() {
     if (!confirm(`Revoke agent ${did}?`)) return;
     try {
       const result = await revokeAgent(did, "Revoked from dashboard");
-      setMessage(`✅ ${result.agentDid} revoked`);
+      setMessage(`${result.agentDid} revoked`);
       setAgents(agents.map((a) => (a.did === did ? { ...a, credentialStatus: "revoked" } : a)));
     } catch (err: any) {
-      setMessage(`❌ ${err.message}`);
+      setMessage(err.message);
     }
   }
 
-  if (loading) return <p>Loading...</p>;
-
   return (
-    <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24 }}>Agent Management</h1>
+    <div className="min-h-screen">
+      <AppHeader />
+      <main className="mx-auto max-w-6xl px-4 py-10">
+        <div className="animate-rise mb-1 text-sm tracking-ultra text-gold">IDENTITY CONTROL</div>
+        <h1 className="animate-rise delay-1 mb-8 text-4xl font-light">Agent Management</h1>
 
-      {message && (
-        <div style={{ padding: "8px 16px", background: "#f3f4f6", borderRadius: 6, marginBottom: 16, fontSize: 14 }}>
-          {message}
-        </div>
-      )}
+        {message && (
+          <div className="glass-gold animate-scale mb-6 rounded-2xl px-5 py-3 text-sm text-gold-bright">
+            {message}
+          </div>
+        )}
 
-      <Card>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead>
-            <tr style={{ borderBottom: "2px solid #e5e7eb", color: "#6b7280", textAlign: "left" }}>
-              <th style={{ padding: "8px 12px" }}>DID</th>
-              <th style={{ padding: "8px 12px" }}>Type</th>
-              <th style={{ padding: "8px 12px" }}>Status</th>
-              <th style={{ padding: "8px 12px" }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {agents.map((a) => (
-              <tr key={a.did} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                <td style={{ padding: "8px 12px", fontFamily: "monospace", fontSize: 12 }}>{a.did}</td>
-                <td style={{ padding: "8px 12px" }}>{a.credentialType}</td>
-                <td style={{ padding: "8px 12px" }}>
-                  <StatusDot status={a.credentialStatus} />
-                  {a.credentialStatus}
-                </td>
-                <td style={{ padding: "8px 12px" }}>
-                  {a.credentialStatus === "active" && (
-                    <button
-                      onClick={() => handleRevoke(a.did)}
-                      style={{
-                        padding: "4px 12px",
-                        fontSize: 12,
-                        background: "#dc2626",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: 4,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Revoke
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
+        {loading ? (
+          <div className="flex items-center gap-3 text-muted">
+            <span className="h-4 w-4 animate-spin-slow rounded-full border-2 border-gold/30 border-t-gold" />
+            Loading agents…
+          </div>
+        ) : (
+          <Card className="animate-fade delay-2">
+            <Table head={["DID", "Type", "Status", "Actions"]}>
+              {agents.map((a) => (
+                <tr key={a.did} className="border-t border-white/5 transition hover:bg-white/[0.03]">
+                  <Td mono>{a.did}</Td>
+                  <Td>{a.credentialType}</Td>
+                  <Td>
+                    <StatusDot status={a.credentialStatus} />
+                    <span className="capitalize">{a.credentialStatus}</span>
+                  </Td>
+                  <Td>
+                    {a.credentialStatus === "active" && (
+                      <button
+                        onClick={() => handleRevoke(a.did)}
+                        className="rounded-full border border-deny/40 bg-deny/10 px-4 py-1.5 text-xs font-medium text-deny transition hover:bg-deny/20"
+                      >
+                        Revoke
+                      </button>
+                    )}
+                  </Td>
+                </tr>
+              ))}
+            </Table>
+          </Card>
+        )}
+      </main>
     </div>
   );
 }

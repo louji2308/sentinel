@@ -1,58 +1,86 @@
-const styles: Record<string, React.CSSProperties> = {
-  badge: {
-    display: "inline-flex",
-    alignItems: "center",
-    padding: "2px 10px",
-    borderRadius: 9999,
-    fontSize: 12,
-    fontWeight: 600,
-    textTransform: "uppercase",
-    letterSpacing: "0.05em",
-  },
-};
-
-const decisionColors: Record<string, { bg: string; text: string }> = {
-  PERMIT: { bg: "#f0fdf4", text: "#16a34a" },
-  DENY: { bg: "#fef2f2", text: "#dc2626" },
-  ESCALATE: { bg: "#fffbeb", text: "#f59e0b" },
+const decisionStyles: Record<string, string> = {
+  PERMIT: "text-permit bg-permit/10 border-permit/30",
+  DENY: "text-deny bg-deny/10 border-deny/30",
+  ESCALATE: "text-escalate bg-escalate/10 border-escalate/30",
 };
 
 export function DecisionBadge({ decision, size = "sm" }: { decision: string; size?: "sm" | "lg" }) {
-  const colors = decisionColors[decision] || { bg: "#f3f4f6", text: "#6b7280" };
-  const fontSize = size === "lg" ? 14 : 12;
-  return <span style={{ ...styles.badge, backgroundColor: colors.bg, color: colors.text, fontSize }}>{decision}</span>;
-}
-
-export function StatusDot({ status }: { status: string }) {
-  const color = status === "active" ? "#16a34a" : status === "revoked" ? "#dc2626" : "#f59e0b";
+  const cls = decisionStyles[decision] || "text-muted bg-white/5 border-white/10";
   return (
     <span
-      style={{
-        display: "inline-block",
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        backgroundColor: color,
-        marginRight: 6,
-      }}
-    />
+      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 font-mono font-semibold uppercase tracking-widest ${cls} ${
+        size === "lg" ? "text-sm" : "text-[11px]"
+      }`}
+    >
+      {decision}
+    </span>
   );
 }
 
-export function Card({ title, children, style }: { title?: string; children: React.ReactNode; style?: React.CSSProperties }) {
+export function StatusDot({ status }: { status: string }) {
+  const color =
+    status === "active"
+      ? "bg-permit shadow-[0_0_8px_hsl(var(--permit))]"
+      : status === "revoked"
+      ? "bg-deny shadow-[0_0_8px_hsl(var(--deny))]"
+      : "bg-escalate shadow-[0_0_8px_hsl(var(--escalate))]";
+  return <span className={`mr-2 inline-block h-2 w-2 rounded-full ${color}`} />;
+}
+
+export function Card({
+  title,
+  children,
+  className = "",
+}: {
+  title?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 8,
-        border: "1px solid #e5e7eb",
-        padding: 16,
-        marginBottom: 16,
-        ...style,
-      }}
-    >
-      {title && <h3 style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 600, color: "#111827" }}>{title}</h3>}
+    <div className={`glass edge-highlight rounded-3xl p-6 ${className}`}>
+      {title && (
+        <h3 className="mb-4 text-sm font-medium uppercase tracking-widest text-gold">{title}</h3>
+      )}
       {children}
     </div>
+  );
+}
+
+export function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs uppercase tracking-widest text-muted">
+            {head.map((h) => (
+              <th key={h} className="px-3 pb-3 font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
+  );
+}
+
+export function Td({
+  children,
+  mono,
+  muted,
+}: {
+  children: React.ReactNode;
+  mono?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <td
+      className={`px-3 py-3 ${mono ? "font-mono text-xs text-foreground/80" : ""} ${
+        muted ? "text-xs text-muted" : ""
+      }`}
+    >
+      {children}
+    </td>
   );
 }
