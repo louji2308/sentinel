@@ -1,0 +1,14 @@
+{
+  "name": "@sentinel/t3-client",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/client.ts",
+  "dependencies": {
+    "@terminal3/t3n-sdk": "latest",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/node": "^20.11.0"
+  }
+}
