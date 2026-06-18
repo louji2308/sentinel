@@ -13,7 +13,7 @@ export const CEDAR_POLICIES: Record<string, string> = {
       principal.spendCap <= 10000 &&
       context.hourOfDay >= 9 &&
       context.hourOfDay < 17 &&
-      context.dayOfWeek in ["Mon", "Tue", "Wed", "Thu", "Fri"]
+      ["Mon", "Tue", "Wed", "Thu", "Fri"].contains(context.dayOfWeek)
     };
 
     @id("travel-agent-forbid-night")
@@ -44,7 +44,7 @@ export const CEDAR_POLICIES: Record<string, string> = {
     ) when {
       principal.credentialStatus == "active" &&
       principal.credentialType == "hr-payroll" &&
-      resource.domain in ["finance", "hr", "payroll"]
+      ["finance", "hr", "payroll"].contains(resource.domain)
     };
 
     @id("hr-agent-prohibit-external")
@@ -53,7 +53,7 @@ export const CEDAR_POLICIES: Record<string, string> = {
       action in [Action::"execute_payment"],
       resource is ExternalPaymentRail
     ) when {
-      resource.domain not in ["finance", "hr", "payroll"]
+      !(["finance", "hr", "payroll"].contains(resource.domain))
     };
   `,
 
@@ -153,7 +153,7 @@ export async function evaluatePolicy(
 
   try {
     const result = cedar.isAuthorized({
-      policies: policyText,
+      policies: { staticPolicies: policyText },
       entities,
       principal: cedarRequest.principal,
       action: cedarRequest.action,

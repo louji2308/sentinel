@@ -8,6 +8,8 @@ import {
   metamask_sign,
 } from "@terminal3/t3n-sdk";
 
+export type { AgentIdentity, ProposedAction, VerdictRequest, ComplianceReceipt, VerdictResponse, AuditLogEntry, VerdictDecision } from "./types.js";
+
 export type AuthenticatedClient = {
   client: T3nClient;
   did: string;
