@@ -1,8 +1,34 @@
 import { Router } from "express";
-import { updateAgentStatus, getAgent } from "../services/agentRegistry.js";
+import { updateAgentStatus, getAgent, registerAgent } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
 
 const router = Router();
+
+router.post("/register-agent", (req, res) => {
+  try {
+    const { agentDid, credentialType, credentialScope } = req.body;
+
+    if (!agentDid || !credentialType) {
+      return res.status(400).json({ error: "agentDid and credentialType are required" });
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const day = 86400;
+
+    registerAgent(agentDid, {
+      did: agentDid,
+      credentialScope: credentialScope || [],
+      credentialStatus: "active",
+      credentialType,
+      issuedAt: now,
+      expiresAt: now + 30 * day,
+    });
+
+    res.json({ success: true, agentDid, status: "active" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.post("/revoke", (req, res) => {
   try {

@@ -11,12 +11,13 @@
     "packages/dashboard"
   ],
   "scripts": {
-    "setup": "npx tsx scripts/setup.ts",
-    "oracle": "npx tsx packages/oracle-server/src/index.ts",
+    "setup": "tsx scripts/setup.ts",
+    "oracle": "tsx packages/oracle-server/src/index.ts",
     "dashboard": "cd packages/dashboard && npm run dev",
-    "demo": "npx tsx scripts/05-run-demo.ts",
+    "demo": "tsx scripts/05-run-demo.ts",
     "dev": "concurrently \"npm run oracle\" \"npm run dashboard\"",
-    "gen:keys": "npx tsx scripts/generate-agent-keys.ts"
+    "gen:keys": "tsx scripts/generate-agent-keys.ts",
+    "test:policy": "tsx scripts/test-policy.ts"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",
