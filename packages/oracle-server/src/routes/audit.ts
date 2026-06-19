@@ -45,4 +45,25 @@ router.get("/receipt/:id", (req, res) => {
   res.json({ entry, verification });
 });
 
+router.get("/export", (_req, res) => {
+  const entries = getLog();
+  const exportData = {
+    exportedAt: Date.now(),
+    totalEntries: entries.length,
+    entries: entries.map((e) => ({
+      id: e.id,
+      timestamp: e.timestamp,
+      agentDid: e.agentDid,
+      decision: e.decision,
+      action: e.action,
+      policyClause: e.policyClause,
+      receiptId: e.receiptId,
+
+    })),
+  };
+  res.setHeader("Content-Type", "application/json");
+  res.setHeader("Content-Disposition", `attachment; filename="sentinel-audit-${Date.now()}.json"`);
+  res.json(exportData);
+});
+
 export default router;

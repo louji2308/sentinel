@@ -1,0 +1,7 @@
+package host:interfaces@2.1.0;
+
+interface logging {
+  info: func(msg: string);
+  warn: func(msg: string);
+  error: func(msg: string);
+}

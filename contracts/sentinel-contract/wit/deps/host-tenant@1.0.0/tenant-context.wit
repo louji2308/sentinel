@@ -1,0 +1,6 @@
+package host:tenant@1.0.0;
+
+interface tenant-context {
+  tenant-did: func() -> list<u8>;
+  tenant-name: func() -> string;
+}

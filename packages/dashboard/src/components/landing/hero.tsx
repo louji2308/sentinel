@@ -26,7 +26,7 @@ export function Hero() {
             <span className="italic">TRUST BUT VERIFY</span>
           </p>
 
-          <h1 className="animate-clip delay-2 select-none text-[clamp(3.8rem,14vw,12rem)] leading-[0.85] tracking-[-0.06em] text-foreground" style={{ fontFamily: 'var(--font-deltha)', fontWeight: 100, WebkitTextStroke: '1.8px hsl(var(--background))', textStroke: '1.8px hsl(var(--background))' }}>
+          <h1 className="animate-clip delay-2 select-none text-[clamp(3.8rem,14vw,12rem)] leading-[0.85] tracking-[-0.06em] text-foreground" style={{ fontFamily: 'var(--font-deltha)', fontWeight: 100, WebkitTextStroke: '1.8px hsl(var(--background))'  }}>
             <span className="gold-text" style={{ filter: 'drop-shadow(0 0 4px hsl(var(--gold) / 0.25)) drop-shadow(0 0 12px hsl(var(--gold) / 0.12))' }}>SEN</span>
             <span className="opacity-90" style={{ filter: 'drop-shadow(0 0 5px hsl(0 0% 100% / 0.3)) drop-shadow(0 0 16px hsl(0 0% 100% / 0.1))' }}>TINEL</span>
           </h1>

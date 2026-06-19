@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Card, DecisionBadge, Table, Td } from "../../components/ui";
-import { fetchAuditLog, fetchReceipt, type AuditEntry } from "../../lib/api";
+import { fetchAuditLog, fetchReceipt, exportAuditLog, type AuditEntry } from "../../lib/api";
 
 export default function AuditPage() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
@@ -25,7 +25,15 @@ export default function AuditPage() {
     <div className="min-h-screen">
       <main className="mx-auto max-w-6xl px-4 pt-24 pb-10">
         <div className="animate-rise mb-1 text-sm tracking-ultra text-gold">TAMPER-EVIDENT LEDGER</div>
-        <h1 className="animate-rise delay-1 mb-8 text-4xl font-light">Audit Log</h1>
+        <div className="animate-rise delay-1 mb-8 flex items-center justify-between">
+          <h1 className="text-4xl font-light">Audit Log</h1>
+          <button
+            onClick={exportAuditLog}
+            className="rounded-full border border-gold/30 bg-gold/10 px-4 py-1.5 text-xs font-medium text-gold-bright transition hover:bg-gold/20"
+          >
+            Export JSON
+          </button>
+        </div>
 
         {verification && (
           <Card

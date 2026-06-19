@@ -17,7 +17,11 @@
     "demo": "tsx scripts/05-run-demo.ts",
     "dev": "concurrently \"npm run oracle\" \"npm run dashboard\"",
     "gen:keys": "tsx scripts/generate-agent-keys.ts",
-    "test:policy": "tsx scripts/test-policy.ts"
+    "test:policy": "tsx scripts/test-policy.ts",
+    "build:contract": "cd contracts/sentinel-contract && cargo build --target wasm32-wasip2 --release",
+    "deploy:contract": "tsx scripts/03-deploy-contract.ts",
+    "seed:policies": "tsx scripts/04-seed-policies.ts",
+    "setup:all": "npm run setup && npm run deploy:contract && npm run seed:policies"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",

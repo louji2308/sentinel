@@ -1,0 +1,6 @@
+package host:interfaces@2.1.0;
+
+interface signing {
+  sign: func(data: list<u8>) -> result<list<u8>, string>;
+  verify: func(data: list<u8>, signature: list<u8>, public-key: list<u8>) -> result<bool, string>;
+}

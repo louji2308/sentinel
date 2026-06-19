@@ -1,0 +1,24 @@
+package z:sentinel-compliance@1.0.0;
+
+world sentinel-compliance {
+  import host:tenant/tenant-context@1.0.0;
+  import host:interfaces/logging@2.1.0;
+  import host:interfaces/kv-store@2.1.0;
+  import host:interfaces/signing@2.1.0;
+  import host:interfaces/time@2.1.0;
+
+  export contracts;
+}
+
+interface contracts {
+  record generic-input {
+    input:        option<list<u8>>,
+    user-profile: option<list<u8>>,
+    context:      option<list<u8>>,
+  }
+
+  evaluate-compliance: func(req: generic-input) -> result<list<u8>, string>;
+  revoke-agent:        func(req: generic-input) -> result<list<u8>, string>;
+  verify-receipt:      func(req: generic-input) -> result<list<u8>, string>;
+  query-audit-log:     func(req: generic-input) -> result<list<u8>, string>;
+}

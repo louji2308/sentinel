@@ -48,6 +48,18 @@ export async function fetchReceipt(receiptId: string) {
   return res.json();
 }
 
+export async function exportAuditLog(): Promise<void> {
+  const res = await fetch(`${ORACLE_URL}/api/audit/export`, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to export audit log");
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = window.document.createElement("a");
+  a.href = url;
+  a.download = `sentinel-audit-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function revokeAgent(agentDid: string, reason?: string) {
   const res = await fetch(`${ORACLE_URL}/api/admin/revoke`, {
     method: "POST",
