@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Card, StatusDot, Table, Td } from "../../components/ui";
+import { AppHeader } from "../../components/app-header";
 import { fetchAgents, revokeAgent, type AgentInfo } from "../../lib/api";
 
 export default function AgentsPage() {
@@ -25,7 +26,8 @@ export default function AgentsPage() {
 
   return (
     <div className="min-h-screen">
-      <main className="mx-auto max-w-6xl px-4 pt-24 pb-10">
+      <AppHeader />
+      <main className="mx-auto max-w-6xl px-4 py-10">
         <div className="animate-rise mb-1 text-sm tracking-ultra text-gold">IDENTITY CONTROL</div>
         <h1 className="animate-rise delay-1 mb-8 text-4xl font-light">Agent Management</h1>
 

@@ -11,5 +11,5 @@
     "outDir": "dist",
     "declaration": false
   },
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "v0-unzipped"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

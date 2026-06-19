@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Card, DecisionBadge, Table, Td } from "../../components/ui";
+import { AppHeader } from "../../components/app-header";
 import { fetchAuditLog, fetchReceipt, type AuditEntry } from "../../lib/api";
 
 export default function AuditPage() {
@@ -23,7 +24,8 @@ export default function AuditPage() {
 
   return (
     <div className="min-h-screen">
-      <main className="mx-auto max-w-6xl px-4 pt-24 pb-10">
+      <AppHeader />
+      <main className="mx-auto max-w-6xl px-4 py-10">
         <div className="animate-rise mb-1 text-sm tracking-ultra text-gold">TAMPER-EVIDENT LEDGER</div>
         <h1 className="animate-rise delay-1 mb-8 text-4xl font-light">Audit Log</h1>
 
