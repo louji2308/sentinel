@@ -1,0 +1,9 @@
+package z:minimal-test@1.0.0;
+
+world minimal-test {
+  export contracts;
+}
+
+interface contracts {
+  ping: func() -> string;
+}

@@ -27,15 +27,7 @@ async function main() {
   const baseUrl = process.env.T3N_BASE_URL || getNodeUrl();
   const tenantClient = await createTenantClient(authClient, tenantDid, baseUrl);
 
-  console.log(`[Deploy] Publishing contract: ${contractTail}@${contractVersion}...`);
-  const publishResult = await tenantClient.contracts.publish({
-    tail: contractTail,
-    version: contractVersion,
-    wasm: new Uint8Array(wasmBytes),
-  });
-  console.log("[Deploy] Publish result:", JSON.stringify(publishResult, null, 2));
-
-  console.log("[Deploy] Registering contract...");
+  console.log(`[Deploy] Registering contract: ${contractTail}@${contractVersion}...`);
   const registerResult = await tenantClient.contracts.register({
     tail: contractTail,
     version: contractVersion,
