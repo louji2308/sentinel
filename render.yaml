@@ -2,10 +2,8 @@ services:
   - type: web
     name: sentinel-oracle
     runtime: node
-    repo: https://github.com/louji2308/sentinel
-    branch: master
     buildCommand: npm install
-    startCommand: npx tsx packages/oracle-server/src/index.ts
+    startCommand: npm run oracle
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION

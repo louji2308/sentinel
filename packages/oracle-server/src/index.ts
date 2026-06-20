@@ -19,7 +19,7 @@ import { rateLimiter } from "./middleware/rateLimit.js";
 import { closeDb, periodicCleanup } from "./services/db.js";
 
 const app = express();
-const PORT = parseInt(process.env.ORACLE_PORT || "3001", 10);
+const PORT = parseInt(process.env.PORT || process.env.ORACLE_PORT || "3001", 10);
 
 app.use(helmet());
 app.use(compression());
