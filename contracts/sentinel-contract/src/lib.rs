@@ -33,6 +33,21 @@ impl Guest for Component {
         let input = req.input.ok_or("query-audit-log: missing input field")?;
         audit::query(&input)
     }
+
+    fn register_agent(req: GenericInput) -> Result<Vec<u8>, String> {
+        let input = req.input.ok_or("register-agent: missing input field")?;
+        compliance::register(&input, req.context.as_deref())
+    }
+
+    fn seed_policy(req: GenericInput) -> Result<Vec<u8>, String> {
+        let input = req.input.ok_or("seed-policy: missing input field")?;
+        compliance::seed_policy(&input, req.context.as_deref())
+    }
+
+    fn resolve_escalation(req: GenericInput) -> Result<Vec<u8>, String> {
+        let input = req.input.ok_or("resolve-escalation: missing input field")?;
+        compliance::resolve_escalation(&input, req.context.as_deref())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]

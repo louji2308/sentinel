@@ -4,82 +4,124 @@ import { createAuthenticatedClient, createTenantClient } from "../packages/t3-cl
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-async function main() {
-  const apiKey = process.env.T3N_API_KEY;
-  const environment = (process.env.T3N_ENVIRONMENT ?? "testnet") as "testnet" | "production";
-  const tenantDid = process.env.SENTINEL_TENANT_DID;
-  const contractTail = process.env.CONTRACT_TAIL;
+const ORACLE_URL = process.env.NEXT_PUBLIC_ORACLE_URL || "http://localhost:3001";
 
-  if (!apiKey) { throw new Error("T3N_API_KEY not set in .env"); }
-  if (!contractTail) { throw new Error("CONTRACT_TAIL not set in .env"); }
-
-  const baseUrl = process.env.T3N_BASE_URL || getNodeUrl();
-  const authClient = await createAuthenticatedClient(apiKey, environment);
-  const tenantClient = await createTenantClient(authClient, tenantDid, baseUrl);
-
-  const kvTail = `${contractTail}-kv`;
-
-  async function setKvEntry(key: string, value: string) {
-    const payload = {
-      tail: kvTail,
-      version: process.env.CONTRACT_VERSION || "0.1.0",
-      functionName: "kv-set",
-      input: { key, value },
-    };
-    try {
-      const result = await tenantClient.contracts.execute(kvTail, {
-        version: payload.version,
-        functionName: payload.functionName,
-        input: payload.input,
-      });
-      console.log(`  ${key} → OK`);
-    } catch (err: any) {
-      console.log(`  ${key} → ${err.message || "failed"}`);
-    }
+async function callOracle(endpoint: string, body: unknown) {
+  const res = await fetch(`${ORACLE_URL}/api/admin/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`${endpoint} failed (${res.status}): ${err}`);
   }
+  return res.json();
+}
 
-  console.log("[Seed] Seeding agent registry entries into KV store...\n");
+async function main() {
+  console.log("[Seed] Seeding agents and policies via oracle server...\n");
+
+  const now = Math.floor(Date.now() / 1000);
+  const day = 86400;
 
   const agents = [
     {
-      did: "did:t3n:travel-agent-demo",
-      type: "travel-booking",
-      scope: ["spend:5000", "domain:flights,hotels,trains"],
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 86400000 * 30,
+      agentDid: "did:t3n:travel-agent-demo",
+      credentialType: "travel-booking",
+      credentialScope: ["spend:5000", "domain:flights,hotels,trains"],
+      issuedAt: now - 7 * day,
+      expiresAt: now + 30 * day,
     },
     {
-      did: "did:t3n:hr-payroll-demo",
-      type: "hr-payroll",
-      scope: ["spend:100000", "domain:payroll,benefits,hr"],
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 86400000 * 30,
+      agentDid: "did:t3n:hr-payroll-demo",
+      credentialType: "hr-payroll",
+      credentialScope: ["spend:100000", "domain:payroll,benefits,hr,finance"],
+      issuedAt: now - 7 * day,
+      expiresAt: now + 30 * day,
     },
     {
-      did: "did:t3n:rogue-agent-demo",
-      type: "financial-trading",
-      scope: ["spend:100", "domain:trading,crypto"],
-      issuedAt: Date.now(),
-      expiresAt: Date.now() + 86400000 * 30,
+      agentDid: "did:t3n:rogue-agent-demo",
+      credentialType: "financial-trading",
+      credentialScope: ["spend:100", "domain:trading,crypto"],
+      issuedAt: now - 1 * day,
+      expiresAt: now + 1 * day,
     },
   ];
 
   for (const agent of agents) {
-    const key = `agent:${agent.did}`;
-    const value = JSON.stringify(agent);
-    await setKvEntry(key, value);
+    try {
+      const result = await callOracle("register-agent", agent);
+      console.log(`  Agent ${agent.agentDid} -> OK`);
+    } catch (err: any) {
+      console.log(`  Agent ${agent.agentDid} -> ${err.message}`);
+    }
   }
 
   console.log("\n[Seed] Seeding Cedar policies...\n");
 
-  const policyDir = path.resolve("packages/policy-engine/src/policies");
-  if (fs.existsSync(policyDir)) {
-    const files = fs.readdirSync(policyDir).filter(f => f.endsWith(".cedar"));
-    for (const file of files) {
-      const policyText = fs.readFileSync(path.join(policyDir, file), "utf-8");
-      const agentType = file.replace(".cedar", "");
-      const key = `policy:${agentType}`;
-      await setKvEntry(key, policyText);
+  const policies = [
+    {
+      agentType: "travel-booking",
+      policyText: `permit(
+  principal is SentinelAgent,
+  action in [SentinelAction::"book_flight", SentinelAction::"search_flights", SentinelAction::"book_hotel"],
+  resource is SentinelResource
+) when {
+  principal.agentType == "travel-booking" &&
+  principal.credentialStatus == "active" &&
+  resource.type in ["TravelSystem", "BookingSystem"]
+};
+
+forbid(
+  principal is SentinelAgent,
+  action == SentinelAction::"execute_payment",
+  resource is SentinelResource
+) when {
+  resource.type == "PaymentRail" &&
+  resource.amount > 5000
+};`,
+    },
+    {
+      agentType: "hr-payroll",
+      policyText: `permit(
+  principal is SentinelAgent,
+  action in [SentinelAction::"execute_payment", SentinelAction::"read_records"],
+  resource is SentinelResource
+) when {
+  principal.agentType == "hr-payroll" &&
+  principal.credentialStatus == "active" &&
+  resource.domain in ["payroll", "benefits", "hr", "finance"]
+};
+
+forbid(
+  principal is SentinelAgent,
+  action == SentinelAction::"execute_payment",
+  resource is SentinelResource
+) when {
+  resource.domain == "external"
+};`,
+    },
+    {
+      agentType: "financial-trading",
+      policyText: `permit(
+  principal is SentinelAgent,
+  action in [SentinelAction::"book_flight", SentinelAction::"execute_payment"],
+  resource is SentinelResource
+) when {
+  principal.agentType == "financial-trading" &&
+  principal.credentialStatus == "active" &&
+  resource.domain in ["trading", "crypto"]
+};`,
+    },
+  ];
+
+  for (const policy of policies) {
+    try {
+      const result = await callOracle("seed-policy", policy);
+      console.log(`  Policy ${policy.agentType} -> OK`);
+    } catch (err: any) {
+      console.log(`  Policy ${policy.agentType} -> ${err.message}`);
     }
   }
 

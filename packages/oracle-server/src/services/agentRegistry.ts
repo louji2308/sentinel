@@ -20,3 +20,7 @@ export function updateAgentStatus(did: string, status: AgentIdentity["credential
   agent.credentialStatus = status;
   return true;
 }
+
+export function clearCache(): void {
+  agents.clear();
+}

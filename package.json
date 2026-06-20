@@ -21,7 +21,9 @@
     "build:contract": "cd contracts/sentinel-contract && cargo build --target wasm32-wasip2 --release",
     "deploy:contract": "tsx scripts/03-deploy-contract.ts",
     "seed:policies": "tsx scripts/04-seed-policies.ts",
-    "setup:all": "npm run setup && npm run deploy:contract && npm run seed:policies"
+    "setup:all": "npm run setup && npm run build:contract && npm run deploy:contract && npm run seed:policies",
+    "verify:receipt": "tsx scripts/verify-receipt-standalone.ts",
+    "dry-run": "tsx -e \"const { runDryRun } = require('./packages/policy-engine/src/simulator'); console.log(JSON.stringify(runDryRun({ agentType: 'travel-booking', credentialStatus: 'active', action: 'book_flight', resourceType: 'TravelSystem', resourceDomain: 'travel', amount: 10000 }), null, 2))\""
   },
   "devDependencies": {
     "concurrently": "^8.2.0",

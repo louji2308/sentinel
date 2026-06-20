@@ -2,7 +2,7 @@
   "name": "@sentinel/policy-engine",
   "version": "1.0.0",
   "type": "module",
-  "main": "src/engine.ts",
+  "main": "src/index.ts",
   "dependencies": {
     "@cedar-policy/cedar-wasm": "latest"
   },

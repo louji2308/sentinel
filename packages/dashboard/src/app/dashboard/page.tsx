@@ -16,8 +16,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.all([fetchAuditLog(), fetchAgents()])
-      .then(([e, a]) => {
-        setEntries(e);
+      .then(([log, a]) => {
+        setEntries(log.entries || []);
         setAgents(a);
       })
       .catch(console.error)

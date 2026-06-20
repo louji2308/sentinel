@@ -9,7 +9,7 @@ export default function AuditPage() {
   const [verification, setVerification] = useState<any>(null);
 
   useEffect(() => {
-    fetchAuditLog().then(setEntries).catch(console.error).finally(() => setLoading(false));
+    fetchAuditLog().then((log) => setEntries(log.entries || [])).catch(console.error).finally(() => setLoading(false));
   }, []);
 
   async function handleVerify(receiptId: string) {
