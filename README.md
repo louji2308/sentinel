@@ -153,6 +153,10 @@ The demo runs four agent scenarios with autonomous behavior:
 
 Every API call attempts the TEE contract first. If the contract is unreachable (see [Known Issues](#known-issues)), the oracle transparently falls back to local in-memory storage and the TypeScript Cedar engine — identical behavior, same API responses, no configuration change needed. A circuit breaker prevents burning rate limit on repeated attempts; the system retries every 60 seconds and switches to contract mode automatically when the TEE becomes available.
 
+### Idempotent Compliance (Phase 3)
+
+Compliance checks are automatically deduplicated by `requestId` — if the same request arrives twice (e.g., due to network retry), the cached verdict is returned instead of re-evaluating. This prevents double-spend on the spend ledger. Responses are cached for 24 hours with periodic cache eviction.
+
 | Endpoint | Description | Contract function |
 |----------|-------------|-------------------|
 | `POST /api/compliance/check` | Evaluate an agent action against policy | `evaluate-compliance` |
@@ -295,6 +299,22 @@ See [`BUGS.md`](./BUGS.md) for the full list of filed bug reports.
 | 1 | T3N testnet returns HTTP 500 on all contract execution — blocks WASM instantiation across all contract variants | Open — requires T3N team investigation ([`BUGS.md`](./BUGS.md#1-contract-execution-fails-with-http-500-internal-error-on-t3n-testnet)) |
 | 2 | Missing agent-registration primitive in ADK contract scaffolding — the standard contract pattern has no `register-agent` export, forcing developers to either use a disconnected KV template contract or build their own registration path | Confirmed |
 | 3 | Documentation ambiguity between `contracts.execute()`-addressed KV contracts and a component's internal `host:interfaces/kv-store` namespace — the two patterns are not clearly distinguished in SDK docs, leading to the seed-script disconnect where data is written to one namespace but read from another | Confirmed |
+| 4 | audit-velocity endpoint uses wrong column names (`entity_id` instead of `agent_did`) — causes runtime errors on spend velocity queries | **Fixed** |
+| 5 | Rust `execute` delegate in `compliance.rs` never calls `record_spend` on PERMIT — spend caps are silently ignored | **Fixed** |
+| 6 | `Decision` enum in Rust serializes as PascalCase but TS expects snake_case — contract correctly returns all-caps verdicts | **Fixed** |
+| 7 | Spend cap not capped to policy maximum in compliance route — `parseSpendCap` returns raw value without per-transaction limit | **Fixed** |
+| 8 | Admin `resolve-escalation` doesn't call `recordSpend` on APPROVE — approved over-cap spend is never tracked | **Fixed** |
+| 9 | `agentBase.ts` polls `/resolve-escalation` endpoint instead of the correct `/governance/escalations/:id/poll` — agents never observe escalation resolution | **Fixed** |
+| 10 | Governance route fails to trigger webhooks on vote-based approval — operators get no notification when an escalation is resolved via multi-sig | **Fixed** |
+| 11 | `package.json` dry-run script uses `require()` in ESM context — crashes with `require is not defined` | **Fixed** |
+| 12 | Circuit breaker entry `blackoutUntil` set far in future — once tripped, contract calls are permanently blocked | **Fixed** |
+| 13 | Diagnostic WIT namespace conflicts with sentinel WIT — two components export the same interface namespace | **Fixed** |
+| 14 | No graceful shutdown in `index.ts` — in-flight requests are dropped on SIGTERM | **Fixed** |
+| 15 | Governance vote deduplicated by `agentDid` alone (not `agentDid + proposalId`) — an operator who votes on one proposal is blocked from voting on others | **Fixed** |
+| 16 | `spend_ledger` table missing `timestamp` column — no ordering possible on velocity queries | **Fixed** |
+| 17 | Missing Zod validation on several POST routes — untyped request bodies cause silent failures | **Fixed** |
+| 18 | Import inconsistencies — `db` imported as named export instead of default across 3 route files | **Fixed** |
+| 19 | Audit log entries in admin route use `ESCALATION_DENY`/`ESCALATION_APPROVE` verdicts not in `VerdictDecision` type union | **Fixed** |
 
 ---
 
@@ -340,6 +360,11 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 | Diagnostic contract for T3N debugging | ✅ | contracts/diagnostic-contract — zero imports, echo pattern |
 | CI/CD hardening (integration tests, security audit, env check) | ✅ | Full integration test job, .env.example validation |
 | Governance dashboard page | ✅ | /governance page with escalations + proposals + quick actions |
+| Request deduplication (idempotent compliance) | ✅ | Cached by requestId for 24h with periodic eviction |
+| Receipt persistence in local fallback mode | ✅ | upsertReceipt called after every local-mode verdict |
+| SQLite WAL checkpoint optimization | ✅ | periodicCleanup() runs every 60s |
+| TypeScript clean compile (oracle-server) | ✅ | Zero errors with strict mode |
+| 16 internal bugs found + fixed | ✅ | See BUGS.md — audit velocity, record_spend, circuit breaker, ESM, etc. |
 | Demo video recorded | ❌ | Not yet recorded |
 
 ---
@@ -369,9 +394,20 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 - ✅ CI/CD hardening — security audit, integration tests, .env.example validation
 - ✅ Bug #2 & #3 documentation — ADK patterns guide
 
+### v3.1 (Phase 3 — Architecture Hardening)
+- ✅ Request deduplication — compliance checks are idempotent by `requestId` (prevents double-spend on retry)
+- ✅ Receipt persistence in local fallback — receipts stored in SQLite `receipts` table for later verification
+- ✅ SQLite WAL checkpoint optimization — periodic `wal_checkpoint(PASSIVE)` prevents WAL file bloat
+- ✅ Cache cleanup — stale request cache entries evicted after 24h TTL
+- ✅ 16 deep bugs fixed — audit velocity columns, Rust record_spend, Decision caching, circuit breaker blackout, ESM dry-run, governance dedup, Zod validation, graceful shutdown, WIT namespace conflict, and more (see [`BUGS.md`](./BUGS.md))
+- ✅ TypeScript strict mode compatibility — oracle-server compiles with zero errors
+
 ### Future (post-hackathon)
 - P2P agent-to-contract compliance checks (remove oracle server from the critical path)
 - Automated policy soundness checking via Cedar validator in CI
+- Policy versioning with seed-policy metadata
+- Rate limiting on governance endpoints
+- Full error-union types replacing `any`
 
 ---
 

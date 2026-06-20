@@ -124,11 +124,20 @@ export async function pollEscalation(
   console.log(`  \u231b Polling escalation ${escalationId}...`);
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const res = await fetch(`${ORACLE_URL}/api/governance/escalations`);
+      const res = await fetch(`${ORACLE_URL}/api/audit/stream?since=0`);
       if (res.ok) {
-        const escalations: any[] = await res.json();
-        const match = escalations.find(e => e.escalationId === escalationId);
-        if (!match) return "approved";
+        const data = await res.json();
+        const entries: any[] = data.entries || [];
+        const resolution = entries.find(
+          (e: any) =>
+            e.receiptId === `gov-${escalationId}` ||
+            e.id === `gov-resolve-${escalationId}` ||
+            (e.policyClause && e.policyClause.includes(escalationId))
+        );
+        if (resolution) {
+          if (resolution.decision === "ESCALATION_APPROVE") return "approved";
+          if (resolution.decision === "ESCALATION_DENY") return "denied";
+        }
       }
     } catch {}
     await new Promise((r) => setTimeout(r, intervalMs));

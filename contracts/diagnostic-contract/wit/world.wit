@@ -1,4 +1,4 @@
-package z:sentinel-compliance@1.0.0;
+package z:sentinel-diagnostic@0.1.0;
 
 interface contracts {
   record generic-input {
@@ -15,6 +15,6 @@ interface contracts {
   resolve-escalation:  func(req: generic-input) -> result<list<u8>, string>;
 }
 
-world sentinel-compliance {
+world sentinel-diagnostic {
   export contracts;
 }

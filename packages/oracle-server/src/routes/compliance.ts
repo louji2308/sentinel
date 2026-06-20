@@ -1,21 +1,44 @@
 import { Router } from "express";
 import crypto from "crypto";
+import { z } from "zod";
 import { callContract } from "../services/sentinelContract.js";
 import { evaluatePolicy } from "@sentinel/policy-engine";
 import { getAgent } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
-import { getCumulativeSpend, recordSpend, insertEscalation, getSpendHistory, getAgent as getAgentFromDb } from "../services/db.js";
+import { getCumulativeSpend, recordSpend, insertEscalation, getCachedResponse, setCachedResponse, upsertReceipt } from "../services/db.js";
 import { notifyEscalation, notifySlack } from "../services/webhooks.js";
+
+const CheckSchema = z.object({
+  agentDid: z.string().min(1),
+  proposedAction: z.object({
+    type: z.string().min(1),
+    resource: z.string().min(1),
+    amount: z.number().positive().optional(),
+    currency: z.string().optional(),
+    metadata: z.record(z.unknown()).optional(),
+  }),
+  requestId: z.string().min(1),
+  timestamp: z.number().optional(),
+});
+
+function parseSpendCap(scope: string[]): number {
+  for (const s of scope) {
+    if (s.startsWith("spend:")) {
+      const cap = s.slice(6);
+      if (cap === "unlimited") return Infinity;
+      const n = parseInt(cap, 10);
+      if (!isNaN(n)) return n;
+    }
+  }
+  return 1000;
+}
 
 const router = Router();
 
 router.post("/check", async (req, res) => {
   try {
-    const { agentDid, proposedAction, requestId, timestamp } = req.body;
-
-    if (!agentDid || !proposedAction || !requestId) {
-      return res.status(400).json({ error: "Missing required fields: agentDid, proposedAction, requestId" });
-    }
+    const parsed = CheckSchema.parse(req.body);
+    const { agentDid, proposedAction, requestId, timestamp } = parsed;
 
     // First, try the TEE contract
     const contractResult = await callContract("evaluate-compliance", {
@@ -56,22 +79,22 @@ router.post("/check", async (req, res) => {
       return res.status(404).json({ error: `Agent ${agentDid} not registered`, requestId });
     }
 
+    const spendCap = parseSpendCap(agent.credentialScope);
     const principal = {
       did: agent.did,
       credentialStatus: agent.credentialStatus,
       credentialType: agent.credentialType,
-      spendCap: agent.expiresAt ? 10000 : 1000,
+      spendCap,
       credentialExpiresAt: agent.expiresAt,
     };
 
     const resource = {
       type: proposedAction.resource || "GenericResource",
-      domain: proposedAction.metadata?.domain || "unknown",
+      domain: (proposedAction.metadata?.domain as string) || "unknown",
       amount: proposedAction.amount,
     };
 
     const now = Date.now();
-    const spendCap = principal.spendCap;
     const spendHourly = getCumulativeSpend(agentDid, now, "hourly");
     const spendDaily = getCumulativeSpend(agentDid, now, "daily");
 
@@ -84,6 +107,12 @@ router.post("/check", async (req, res) => {
       spendHourly,
       spendCap,
     };
+
+    // Request deduplication: return cached result for identical requestId
+    const cached = getCachedResponse(requestId);
+    if (cached) {
+      return res.json(JSON.parse(cached));
+    }
 
     const policyResult = await evaluatePolicy(principal, proposedAction.type, resource, context);
 
@@ -100,6 +129,18 @@ router.post("/check", async (req, res) => {
       signature: `sig-${crypto.createHash("sha256").update(receiptId + policyResult.policyHash).digest("hex")}`,
       action: proposedAction,
     };
+
+    // Persist receipt for later verification
+    upsertReceipt({
+      receiptId,
+      agentDid,
+      decision: policyResult.decision,
+      policyHash: policyResult.policyHash,
+      policyClause: policyResult.matchedPolicyId,
+      issuedAt: Math.floor(Date.now() / 1000),
+      expiresAt: Math.floor(Date.now() / 1000) + 86400,
+      signature: receipt.signature,
+    });
 
     if (policyResult.decision === "PERMIT" && proposedAction.amount) {
       recordSpend(agentDid, proposedAction.amount, now, "daily");
@@ -151,15 +192,23 @@ router.post("/check", async (req, res) => {
       receiptId,
     });
 
-    res.json({
+    const response = {
       requestId,
       decision: policyResult.decision,
       receipt,
       reason: policyResult.reason,
       escalationId: policyResult.decision === "ESCALATE" ? `ESC-${requestId.slice(0, 8)}` : undefined,
-    });
+    };
+
+    // Cache for idempotent replay protection
+    setCachedResponse(requestId, JSON.stringify(response));
+
+    res.json(response);
   } catch (err: any) {
     console.error("[Compliance] Error:", err);
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: err.errors });
+    }
     res.status(500).json({ error: err.message });
   }
 });

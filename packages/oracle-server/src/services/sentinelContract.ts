@@ -4,7 +4,7 @@ import crypto from "crypto";
 
 let clientPromise: Promise<any> | null = null;
 let contractAvailable = false;
-let lastFailureTime = 0;
+let lastAttemptTime = 0;
 let contractDownLogged = false;
 const RETRY_INTERVAL_MS = 60_000;
 
@@ -21,7 +21,7 @@ export function isContractAvailable(): boolean {
   return contractAvailable;
 }
 
-async function getTenantClient() {
+async function getTenantClient(): Promise<any> {
   if (!clientPromise) {
     clientPromise = (async () => {
       try {
@@ -32,10 +32,13 @@ async function getTenantClient() {
         const auth = await createAuthenticatedClient(apiKey, environment);
         const tc = await createTenantClient(auth, tenantDid, baseUrl);
         contractAvailable = true;
+        contractDownLogged = false;
         return tc;
       } catch (err) {
         console.warn("[Contract] T3N client init failed — falling back to local storage:", (err as Error).message);
         contractAvailable = false;
+        // Clear promise so next retry creates a fresh client
+        clientPromise = null;
         return null;
       }
     })();
@@ -46,7 +49,7 @@ async function getTenantClient() {
 export async function resetClient() {
   clientPromise = null;
   contractAvailable = false;
-  lastFailureTime = 0;
+  lastAttemptTime = 0;
   contractDownLogged = false;
 }
 
@@ -72,16 +75,21 @@ export async function callContract<T = unknown>(
     return { ok: false, error: "T3N env vars not configured" };
   }
 
-  // Circuit breaker: if contract recently failed, skip retry
+  // Circuit breaker: skip if we attempted within RETRY_INTERVAL_MS
   const now = Date.now();
-  if (!contractAvailable && lastFailureTime > 0 && now - lastFailureTime < RETRY_INTERVAL_MS) {
+  if (!contractAvailable && lastAttemptTime > 0 && now - lastAttemptTime < RETRY_INTERVAL_MS) {
     return { ok: false, error: "contract unavailable (circuit breaker)" };
   }
+
+  lastAttemptTime = now;
 
   try {
     const tc = await getTenantClient();
     if (!tc) {
-      markContractDown();
+      if (!contractDownLogged) {
+        contractDownLogged = true;
+        console.log("[Contract] TEE contract unreachable — switched to local storage. Will retry every 60s.");
+      }
       return { ok: false, error: "T3N client unavailable" };
     }
 
@@ -93,7 +101,6 @@ export async function callContract<T = unknown>(
       input,
     });
 
-    // Success — mark available
     if (!contractAvailable) {
       contractAvailable = true;
       contractDownLogged = false;
@@ -102,25 +109,13 @@ export async function callContract<T = unknown>(
 
     return { ok: true, data: result as T };
   } catch (err: any) {
-    markContractDown();
+    contractAvailable = false;
+    if (!contractDownLogged) {
+      contractDownLogged = true;
+      console.log("[Contract] TEE contract unreachable — switched to local storage. Will retry every 60s.");
+    }
     const msg = err?.message || String(err);
     return { ok: false, error: msg };
-  }
-}
-
-function markContractDown() {
-  contractAvailable = false;
-  if (lastFailureTime === 0) {
-    lastFailureTime = Date.now();
-  } else {
-    const now = Date.now();
-    if (now - lastFailureTime > RETRY_INTERVAL_MS) {
-      lastFailureTime = now; // allow next retry window
-    }
-  }
-  if (!contractDownLogged) {
-    contractDownLogged = true;
-    console.log("[Contract] TEE contract unreachable — switched to local storage. Will retry every 60s.");
   }
 }
 

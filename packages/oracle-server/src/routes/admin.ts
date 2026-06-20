@@ -1,18 +1,38 @@
 import { Router } from "express";
+import { z } from "zod";
 import { callContractWithAdmin } from "../services/sentinelContract.js";
 import { registerAgent, getAgent, updateAgentStatus, getAllAgents } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
+import db, { recordSpend } from "../services/db.js";
 import { notifyEscalation, notifySlack } from "../services/webhooks.js";
+
+const RegisterSchema = z.object({
+  agentDid: z.string().min(1),
+  credentialType: z.string().min(1),
+  credentialScope: z.array(z.string()).optional(),
+});
+
+const RevokeSchema = z.object({
+  agentDid: z.string().min(1),
+  reason: z.string().optional(),
+});
+
+const SeedPolicySchema = z.object({
+  agentType: z.string().min(1),
+  policyText: z.string().min(1),
+});
+
+const ResolveAdminSchema = z.object({
+  escalationId: z.string().min(1),
+  decision: z.enum(["APPROVE", "DENY"]),
+  reason: z.string().optional(),
+});
 
 const router = Router();
 
 router.post("/register-agent", async (req, res) => {
   try {
-    const { agentDid, credentialType, credentialScope } = req.body;
-
-    if (!agentDid || !credentialType) {
-      return res.status(400).json({ error: "agentDid and credentialType are required" });
-    }
+    const { agentDid, credentialType, credentialScope } = RegisterSchema.parse(req.body);
 
     const now = Math.floor(Date.now() / 1000);
     const day = 86400;
@@ -47,17 +67,14 @@ router.post("/register-agent", async (req, res) => {
       storage: contractResult.ok ? "contract+local" : "local",
     });
   } catch (err: any) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: err.errors });
     res.status(500).json({ error: err.message });
   }
 });
 
 router.post("/revoke", async (req, res) => {
   try {
-    const { agentDid, reason } = req.body;
-
-    if (!agentDid) {
-      return res.status(400).json({ error: "agentDid is required" });
-    }
+    const { agentDid, reason } = RevokeSchema.parse(req.body);
 
     // Always update locally first
     const localSuccess = updateAgentStatus(agentDid, "revoked");
@@ -96,17 +113,14 @@ router.post("/revoke", async (req, res) => {
       storage: contractResult.ok ? "contract+local" : "local",
     });
   } catch (err: any) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: err.errors });
     res.status(500).json({ error: err.message });
   }
 });
 
 router.post("/seed-policy", async (req, res) => {
   try {
-    const { agentType, policyText } = req.body;
-
-    if (!agentType || !policyText) {
-      return res.status(400).json({ error: "agentType and policyText are required" });
-    }
+    const { agentType, policyText } = SeedPolicySchema.parse(req.body);
 
     const contractResult = await callContractWithAdmin("seed-policy", {
       agentType,
@@ -129,30 +143,28 @@ router.post("/seed-policy", async (req, res) => {
 
 router.post("/resolve-escalation", async (req, res) => {
   try {
-    const { escalationId, decision, reason } = req.body;
+    const { escalationId, decision, reason } = ResolveAdminSchema.parse(req.body);
 
-    if (!escalationId || !decision) {
-      return res.status(400).json({ error: "escalationId and decision are required" });
-    }
-
-    const normalized = decision.toUpperCase();
-    if (normalized !== "APPROVE" && normalized !== "DENY") {
-      return res.status(400).json({ error: "decision must be APPROVE or DENY" });
-    }
-
-    // Record locally
     appendEntry({
       id: `res-${escalationId}`,
       timestamp: Date.now(),
       agentDid: "operator",
-      decision: `ESCALATION_${normalized}`,
+      decision: `ESCALATION_${decision}`,
       policyClause: `escalation_resolved:${escalationId}`,
       action: { type: "resolve_escalation", resource: escalationId },
       receiptId: `res-${escalationId}`,
-      operatorAction: normalized === "APPROVE" ? "approved" : "denied",
+      operatorAction: decision === "APPROVE" ? "approved" : "denied",
     });
 
-    // Fire webhook notification
+    if (decision === "APPROVE") {
+      const escRow = db.prepare("SELECT agent_did, amount, request_id FROM escalations WHERE escalation_id = ?").get(escalationId) as any;
+      if (escRow?.amount) {
+        recordSpend(escRow.agent_did, escRow.amount, Date.now(), "daily");
+        recordSpend(escRow.agent_did, escRow.amount, Date.now(), "hourly");
+        recordSpend(escRow.agent_did, escRow.amount, Date.now(), "weekly");
+      }
+    }
+
     notifyEscalation({
       eventType: "escalation.resolved",
       escalationId,
@@ -160,10 +172,10 @@ router.post("/resolve-escalation", async (req, res) => {
       requestId: escalationId,
       amount: 0,
       reason: reason || "Resolved by operator",
-      status: normalized === "APPROVE" ? "approved" : "denied",
+      status: decision === "APPROVE" ? "approved" : "denied",
       createdAt: Date.now(),
       resolvedAt: Date.now(),
-      resolution: normalized,
+      resolution: decision,
       resolvedBy: "operator",
       dashboardUrl: "http://localhost:3000/governance",
     }).catch(() => {});
@@ -174,18 +186,17 @@ router.post("/resolve-escalation", async (req, res) => {
       requestId: escalationId,
       amount: 0,
       reason: reason || "Resolved by operator",
-      status: normalized === "APPROVE" ? "approved" : "denied",
+      status: decision === "APPROVE" ? "approved" : "denied",
       createdAt: Date.now(),
       resolvedAt: Date.now(),
-      resolution: normalized,
+      resolution: decision,
       resolvedBy: "operator",
       dashboardUrl: "http://localhost:3000/governance",
     }).catch(() => {});
 
-    // Try the contract
     const contractResult = await callContractWithAdmin("resolve-escalation", {
       escalationId,
-      decision: normalized,
+      decision,
       operatorDid: "did:t3n:admin-operator",
       reason: reason || "Resolved by operator",
     });
@@ -197,11 +208,14 @@ router.post("/resolve-escalation", async (req, res) => {
     res.json({
       success: true,
       escalationId,
-      decision: normalized,
+      decision,
       storage: contractResult.ok ? "contract+local" : "local",
       contractResult: contractResult.ok ? contractResult.data : undefined,
     });
   } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: err.errors });
+    }
     res.status(500).json({ error: err.message });
   }
 });

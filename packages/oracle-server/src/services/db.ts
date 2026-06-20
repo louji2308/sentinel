@@ -11,6 +11,13 @@ const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
+// Migration: add timestamp column to spend_ledger for existing databases
+try {
+  db.exec("ALTER TABLE spend_ledger ADD COLUMN timestamp INTEGER NOT NULL DEFAULT 0");
+} catch {
+  // Column already exists — migration already applied
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS agents (
     did              TEXT PRIMARY KEY,
@@ -55,6 +62,7 @@ db.exec(`
     window_key  TEXT NOT NULL,
     window_type TEXT NOT NULL DEFAULT 'daily',
     amount      INTEGER NOT NULL DEFAULT 0,
+    timestamp   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (did, window_key, window_type)
   );
 
@@ -80,6 +88,14 @@ db.exec(`
     created_at    INTEGER NOT NULL,
     expires_at    INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS request_cache (
+    request_id   TEXT PRIMARY KEY,
+    response     TEXT NOT NULL,
+    created_at   INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_request_cache_created ON request_cache(created_at);
 `);
 
 function getWindowKey(timestampMs: number, type: "hourly" | "daily" | "weekly"): string {
@@ -91,11 +107,12 @@ function getWindowKey(timestampMs: number, type: "hourly" | "daily" | "weekly"):
 
 export function recordSpend(did: string, amount: number, timestampMs: number, windowType: "hourly" | "daily" | "weekly"): void {
   const windowKey = getWindowKey(timestampMs, windowType);
+  const ts = Math.floor(timestampMs);
   db.prepare(`
-    INSERT INTO spend_ledger (did, window_key, window_type, amount)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT(did, window_key, window_type) DO UPDATE SET amount = amount + excluded.amount
-  `).run(did, windowKey, windowType, Math.floor(amount));
+    INSERT INTO spend_ledger (did, window_key, window_type, amount, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(did, window_key, window_type) DO UPDATE SET amount = amount + excluded.amount, timestamp = MAX(timestamp, excluded.timestamp)
+  `).run(did, windowKey, windowType, Math.floor(amount), ts);
 }
 
 export function getCumulativeSpend(did: string, timestampMs: number, windowType: "hourly" | "daily" | "weekly"): number {
@@ -364,11 +381,41 @@ export function getPendingProposals() {
     }));
 }
 
+export function getCachedResponse(requestId: string): string | null {
+  const row = db.prepare("SELECT response FROM request_cache WHERE request_id = ? AND created_at > ?").get(requestId, Date.now() - 86400000) as { response: string } | undefined;
+  return row?.response ?? null;
+}
+
+export function setCachedResponse(requestId: string, response: string): void {
+  db.prepare("INSERT OR REPLACE INTO request_cache (request_id, response, created_at) VALUES (?, ?, ?)").run(requestId, response, Date.now());
+}
+
+export function cacheCleanup(): void {
+  db.prepare("DELETE FROM request_cache WHERE created_at < ?").run(Date.now() - 86400000);
+}
+
+export function walCheckpoint(): void {
+  db.pragma("wal_checkpoint(PASSIVE)");
+}
+
+const CACHE_CLEANUP_INTERVAL = 3600000;
+let lastCleanup = 0;
+
+export function periodicCleanup(): void {
+  const now = Date.now();
+  if (now - lastCleanup > CACHE_CLEANUP_INTERVAL) {
+    lastCleanup = now;
+    cacheCleanup();
+    walCheckpoint();
+  }
+}
+
 export function clearDb(): void {
-  db.exec("DELETE FROM agents; DELETE FROM audit_log; DELETE FROM escalations; DELETE FROM spend_ledger; DELETE FROM receipts; DELETE FROM proposals;");
+  db.exec("DELETE FROM agents; DELETE FROM audit_log; DELETE FROM escalations; DELETE FROM spend_ledger; DELETE FROM receipts; DELETE FROM proposals; DELETE FROM request_cache;");
 }
 
 export function closeDb(): void {
+  walCheckpoint();
   db.close();
 }
 

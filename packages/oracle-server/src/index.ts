@@ -23,6 +23,20 @@ app.use("/api/audit", auditRouter);
 app.use("/api/audit", auditVelocityRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/governance", governanceRouter);
+
+// Periodic cache cleanup + WAL checkpoint (every minute)
+setInterval(() => {
+  const { periodicCleanup } = require("./services/db.js");
+  periodicCleanup();
+}, 60_000);
+
+// Request logging middleware (non-blocking)
+app.use((req, _res, next) => {
+  if (req.path.startsWith("/api/")) {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  }
+  next();
+});
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -242,5 +256,15 @@ async function start() {
 }
 
 start();
+
+function gracefulShutdown(signal: string) {
+  console.log(`\n[Oracle] Received ${signal}. Shutting down gracefully...`);
+  const { closeDb } = require("./services/db.js");
+  closeDb();
+  process.exit(0);
+}
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 export default app;

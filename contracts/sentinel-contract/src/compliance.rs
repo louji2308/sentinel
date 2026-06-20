@@ -249,8 +249,15 @@ pub fn evaluate(input: &[u8], _context: Option<&[u8]>) -> Result<Vec<u8>, String
     );
 
     let (clause, reason) = policy_clause_for_decision(&decision, &agent_record, &req.action);
+    let decision_str = decision.to_string();
 
-    audit::write_entry(&req.agent_did, &format!("{:?}", decision), &clause, &req.action, &req.request_id)?;
+    audit::write_entry(&req.agent_did, &decision_str, &clause, &req.action, &req.request_id)?;
+
+    if decision == Decision::Permit {
+        if let Some(amount) = req.action.amount {
+            record_spend(&req.agent_did, amount as u64, time::now_ms());
+        }
+    }
 
     let mut escalation_id: Option<String> = None;
     if decision == Decision::Escalate {
@@ -282,7 +289,7 @@ pub fn evaluate(input: &[u8], _context: Option<&[u8]>) -> Result<Vec<u8>, String
 
     let issued_receipt = receipt::issue(
         &req.agent_did,
-        &format!("{:?}", decision),
+        &decision_str,
         &policy_hash,
         &clause,
         &req.request_id,
@@ -291,7 +298,7 @@ pub fn evaluate(input: &[u8], _context: Option<&[u8]>) -> Result<Vec<u8>, String
 
     let response = json!({
         "requestId": req.request_id,
-        "decision": format!("{:?}", decision),
+        "decision": decision_str,
         "receipt": issued_receipt,
         "reason": reason,
         "escalationId": escalation_id,
@@ -302,6 +309,16 @@ pub fn evaluate(input: &[u8], _context: Option<&[u8]>) -> Result<Vec<u8>, String
 
 #[derive(Debug, PartialEq)]
 enum Decision { Permit, Deny, Escalate }
+
+impl std::fmt::Display for Decision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Decision::Permit => write!(f, "PERMIT"),
+            Decision::Deny => write!(f, "DENY"),
+            Decision::Escalate => write!(f, "ESCALATE"),
+        }
+    }
+}
 
 fn evaluate_rules(agent: &AgentRecord, action: &ActionInput, timestamp_ms: u64) -> Decision {
     if agent.agent_type == "travel-booking" {

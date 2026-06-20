@@ -1,6 +1,9 @@
 import { Router } from "express";
 import crypto from "crypto";
-import { db } from "../services/db";
+import { z } from "zod";
+import db, { getPendingProposals, getPendingEscalations, recordSpend } from "../services/db.js";
+import { appendEntry } from "../services/auditLog.js";
+import { notifyEscalation, notifySlack } from "../services/webhooks.js";
 
 const router = Router();
 
@@ -8,20 +11,26 @@ function generateId(prefix: string): string {
   return `${prefix}-${crypto.randomBytes(8).toString("hex")}`;
 }
 
+const ProposalSchema = z.object({
+  action: z.string().min(1),
+  targetId: z.string().min(1),
+  decision: z.enum(["APPROVE", "DENY"]).optional().default("APPROVE"),
+  requiredVotes: z.number().int().positive().optional().default(2),
+});
+
+const VoteSchema = z.object({
+  operatorDid: z.string().min(1),
+  approve: z.boolean(),
+});
+
+const ResolveSchema = z.object({
+  decision: z.enum(["APPROVE", "DENY"]),
+  reason: z.string().optional(),
+});
+
 router.get("/proposals", (_req, res) => {
   try {
-    const proposals = db.prepare("SELECT * FROM proposals ORDER BY created_at DESC LIMIT 50").all() as any[];
-    res.json(proposals.map(p => ({
-      proposalId: p.proposal_id,
-      action: p.action,
-      targetId: p.target_id,
-      decision: p.decision,
-      requiredVotes: p.required_votes,
-      votes: JSON.parse(p.votes),
-      status: p.status,
-      createdAt: p.created_at,
-      expiresAt: p.expires_at,
-    })));
+    res.json(getPendingProposals());
   } catch (err: any) {
     res.status(500).json({ error: err.message, proposals: [] });
   }
@@ -29,16 +38,13 @@ router.get("/proposals", (_req, res) => {
 
 router.post("/proposals", (req, res) => {
   try {
-    const { action, targetId, decision, requiredVotes } = req.body;
-    if (!action || !targetId) {
-      return res.status(400).json({ error: "action and targetId required" });
-    }
+    const data = ProposalSchema.parse(req.body);
     const proposal = {
       proposalId: generateId("PROP"),
-      action,
-      targetId,
-      decision: decision || "APPROVE",
-      requiredVotes: requiredVotes || 2,
+      action: data.action,
+      targetId: data.targetId,
+      decision: data.decision,
+      requiredVotes: data.requiredVotes,
       votes: [],
       status: "pending",
       createdAt: Date.now(),
@@ -46,20 +52,13 @@ router.post("/proposals", (req, res) => {
     };
     db.prepare(`
       INSERT INTO proposals (proposal_id, action, target_id, decision, required_votes, votes, status, created_at, expires_at)
-      VALUES (@proposalId, @action, @targetId, @decision, @requiredVotes, @votes, @status, @createdAt, @expiresAt)
-    `).run({
-      proposalId: proposal.proposalId,
-      action: proposal.action,
-      targetId: proposal.targetId,
-      decision: proposal.decision,
-      requiredVotes: proposal.requiredVotes,
-      votes: JSON.stringify(proposal.votes),
-      status: proposal.status,
-      createdAt: proposal.createdAt,
-      expiresAt: proposal.expiresAt,
-    });
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(proposal.proposalId, proposal.action, proposal.targetId, proposal.decision,
+           proposal.requiredVotes, JSON.stringify(proposal.votes), proposal.status,
+           proposal.createdAt, proposal.expiresAt);
     res.json(proposal);
   } catch (err: any) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: err.errors });
     res.status(500).json({ error: err.message });
   }
 });
@@ -67,10 +66,7 @@ router.post("/proposals", (req, res) => {
 router.post("/proposals/:id/vote", (req, res) => {
   try {
     const { id } = req.params;
-    const { operatorDid, approve } = req.body;
-    if (!operatorDid) {
-      return res.status(400).json({ error: "operatorDid required" });
-    }
+    const { operatorDid, approve } = VoteSchema.parse(req.body);
 
     const row = db.prepare("SELECT * FROM proposals WHERE proposal_id = ?").get(id) as any;
     if (!row) return res.status(404).json({ error: "Proposal not found" });
@@ -81,7 +77,7 @@ router.post("/proposals/:id/vote", (req, res) => {
       return res.status(409).json({ error: "Operator already voted" });
     }
 
-    votes.push({ operator: operatorDid, approve: !!approve });
+    votes.push({ operator: operatorDid, approve });
 
     const approveCount = votes.filter(v => v.approve).length;
     const rejectCount = votes.filter(v => !v.approve).length;
@@ -94,22 +90,14 @@ router.post("/proposals/:id/vote", (req, res) => {
 
     res.json({ proposalId: id, votes, status, approveCount, rejectCount });
   } catch (err: any) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: err.errors });
     res.status(500).json({ error: err.message });
   }
 });
 
 router.get("/escalations", (_req, res) => {
   try {
-    const rows = db.prepare("SELECT * FROM escalations WHERE status = 'pending' ORDER BY created_at DESC").all() as any[];
-    res.json(rows.map(r => ({
-      escalationId: r.escalation_id,
-      agentDid: r.agent_did,
-      requestId: r.request_id,
-      amount: r.amount,
-      reason: r.reason,
-      status: r.status,
-      createdAt: r.created_at,
-    })));
+    res.json(getPendingEscalations());
   } catch (err: any) {
     res.status(500).json({ error: err.message, escalations: [] });
   }
@@ -118,27 +106,66 @@ router.get("/escalations", (_req, res) => {
 router.post("/escalations/:id/resolve", (req, res) => {
   try {
     const { id } = req.params;
-    const { decision, reason } = req.body;
-    if (!decision || !["APPROVE", "DENY"].includes(decision)) {
-      return res.status(400).json({ error: "decision must be APPROVE or DENY" });
-    }
+    const { decision, reason } = ResolveSchema.parse(req.body);
+
     const status = decision === "APPROVE" ? "approved" : "denied";
+    const now = Date.now();
     const result = db.prepare(
       "UPDATE escalations SET status = ?, resolved_at = ?, resolution = ?, resolved_by = ? WHERE escalation_id = ? AND status = 'pending'"
-    ).run(status, Date.now(), reason || `Resolved via governance`, "operator", id);
+    ).run(status, now, reason || "Resolved via governance", "governance", id);
     if (result.changes === 0) return res.status(404).json({ error: "Escalation not found or already resolved" });
 
-    db.prepare(
-      "INSERT INTO audit_log (id, timestamp, agent_did, decision, policy_clause, action, receipt_id) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run(
-      `gov-resolve-${id}`, Date.now(), "governance", `ESCALATION_${decision}`,
-      `governance_resolved:${id}=${decision}`,
-      JSON.stringify({ type: "governance_resolve", resource: id }),
-      `gov-${id}`
-    );
+    if (decision === "APPROVE") {
+      const escRow = db.prepare("SELECT agent_did, amount FROM escalations WHERE escalation_id = ?").get(id) as any;
+      if (escRow?.amount) {
+        recordSpend(escRow.agent_did, escRow.amount, now, "daily");
+        recordSpend(escRow.agent_did, escRow.amount, now, "hourly");
+        recordSpend(escRow.agent_did, escRow.amount, now, "weekly");
+      }
+    }
+
+    appendEntry({
+      id: `gov-resolve-${id}`,
+      timestamp: now,
+      agentDid: "governance",
+      decision: `ESCALATION_${decision}`,
+      policyClause: `governance_resolved:${id}=${decision}`,
+      action: { type: "governance_resolve", resource: id },
+      receiptId: `gov-${id}`,
+    });
+
+    notifyEscalation({
+      eventType: "escalation.resolved",
+      escalationId: id,
+      agentDid: id,
+      requestId: id,
+      amount: 0,
+      reason: reason || "Resolved via governance",
+      status,
+      createdAt: now,
+      resolvedAt: now,
+      resolution: decision,
+      resolvedBy: "governance",
+      dashboardUrl: "http://localhost:3000/governance",
+    }).catch(() => {});
+    notifySlack({
+      eventType: "escalation.resolved",
+      escalationId: id,
+      agentDid: id,
+      requestId: id,
+      amount: 0,
+      reason: reason || "Resolved via governance",
+      status,
+      createdAt: now,
+      resolvedAt: now,
+      resolution: decision,
+      resolvedBy: "governance",
+      dashboardUrl: "http://localhost:3000/governance",
+    }).catch(() => {});
 
     res.json({ escalationId: id, status, resolved: true });
   } catch (err: any) {
+    if (err instanceof z.ZodError) return res.status(400).json({ error: "Validation failed", details: err.errors });
     res.status(500).json({ error: err.message });
   }
 });

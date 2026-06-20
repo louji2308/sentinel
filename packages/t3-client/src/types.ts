@@ -1,4 +1,4 @@
-export type VerdictDecision = "PERMIT" | "DENY" | "ESCALATE";
+export type VerdictDecision = "PERMIT" | "DENY" | "ESCALATE" | "ESCALATION_DENY" | "ESCALATION_APPROVE";
 
 export interface AgentIdentity {
   did: string;
@@ -53,5 +53,5 @@ export interface AuditLogEntry {
   policyClause: string;
   action: ProposedAction;
   receiptId: string;
-  operatorAction?: "revoked" | "approved";
+  operatorAction?: "revoked" | "approved" | "denied";
 }

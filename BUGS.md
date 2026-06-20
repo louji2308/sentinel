@@ -93,3 +93,157 @@ These are two completely different storage paths with different key namespaces, 
 
 ### Status
 Confirmed. Requires documentation clarification.
+
+---
+
+## 4. `spend_ledger` table missing `timestamp` column (FIXED)
+
+**File:** `packages/oracle-server/src/services/db.ts`
+
+**Root cause:** The `spend_ledger` table schema had no `timestamp` column, but `audit-velocity.ts` queried `WHERE timestamp > ?`. This would crash at runtime with `SQLITE_ERROR: no such column: timestamp`. Additionally, the `recordSpend` function did not store a timestamp, making time-window filtering impossible.
+
+**Fix:** Added `timestamp INTEGER NOT NULL DEFAULT 0` column to the schema, updated `recordSpend` to store `MAX(timestamp, excluded.timestamp)` on upsert, and added a migration `ALTER TABLE` statement for existing databases (wrapped in try/catch for idempotence).
+
+---
+
+## 5. `audit-velocity.ts` references wrong column names (FIXED)
+
+**File:** `packages/oracle-server/src/routes/audit-velocity.ts`
+
+**Root cause:** The SQL queries referenced columns `bucket` and `agent_did` which do not exist in the `spend_ledger` table. The actual columns are `window_type` and `did`. All three queries would crash at runtime.
+
+**Fix:** All column references corrected:
+- `bucket` → `window_type` (3 occurrences)
+- `agent_did` → `did` (2 occurrences)
+- Result field access `r.bucket` → `r.window_type`
+
+---
+
+## 6. `compliance.rs` `record_spend()` never called from `evaluate()` (FIXED)
+
+**File:** `contracts/sentinel-contract/src/compliance.rs`
+
+**Root cause:** The `record_spend()` function was defined (line 370) but never called from the `evaluate()` function. Cumulative velocity tracking was a complete no-op in the TEE contract — spend was never persisted after a PERMIT decision. The TS local fallback was also affected because the contract was the authoritative source.
+
+**Fix:** Added `record_spend()` call inside `evaluate()` immediately after detecting a `Decision::Permit` and extracting the amount from the action input.
+
+---
+
+## 7. `Decision` enum output casing mismatch between contract and TS (FIXED)
+
+**File:** `contracts/sentinel-contract/src/compliance.rs`
+
+**Root cause:** The `Decision` enum derived `Debug` via `#[derive(Debug)]`, and `format!("{:?}", decision)` produced CamelCase variant names (`"Permit"`, `"Deny"`, `"Escalate"`). The TypeScript side expected `UPPER_CASE` (`"PERMIT"`, `"DENY"`, `"ESCALATE"`). When the contract became reachable, all decisions would have wrong casing in the API response, breaking the dashboard and agent code.
+
+**Fix:** Implemented `std::fmt::Display for Decision` with explicit match arms producing uppercase output. Changed all `format!("{:?}", decision)` usages to `decision.to_string()` (3 occurrences).
+
+---
+
+## 8. Local fallback `spendCap` is hardcoded instead of parsed from agent scope (FIXED)
+
+**File:** `packages/oracle-server/src/routes/compliance.ts`
+
+**Root cause:** Line 63 computed `spendCap: agent.expiresAt ? 10000 : 1000`, which used the `expiresAt` timestamp as a boolean proxy (always truthy for any valid agent) and hardcoded the cap at $10,000 regardless of the agent's actual scope (e.g., `spend:5000` in the travel agent's scope). The `engine.ts` policy engine used this cap for velocity checks, making it always $10,000 per agent.
+
+**Fix:** Added `parseSpendCap(scope: string[])` function that scans scope entries for `spend:<N>`, `spend:unlimited`, and extracts the actual cap. Falls back to $1,000 if no spend scope is declared.
+
+---
+
+## 9. `admin.ts` escalation APPROVE doesn't record spend in local fallback (FIXED)
+
+**File:** `packages/oracle-server/src/routes/admin.ts`
+
+**Root cause:** When an escalation was APPROVED via the admin API, the Rust contract's `resolve_escalation` correctly recorded the spend (line 571-580 in compliance.rs), but the TypeScript local fallback path in `admin.ts` did not call `recordSpend()` at all. This caused a data desync between contract mode and local mode — spend from approved escalations would only appear in contract mode.
+
+**Fix:** Added `recordSpend()` for all three windows (daily/hourly/weekly) in the `resolve-escalation` handler when decision is `APPROVE`.
+
+---
+
+## 10. `pollEscalation()` logic incorrectly assumes missing = approved (FIXED)
+
+**File:** `packages/agents/src/agentBase.ts`
+
+**Root cause:** The `pollEscalation()` function checked if the escalation was absent from the pending list and immediately returned `"approved"`. This was incorrect because the escalation could still be pending (not yet visible), was denied (and removed), or the API call failed silently. It also used `/api/governance/escalations` which only returns pending escalations, making it impossible to distinguish "approved" from "denied".
+
+**Fix:** Changed to query `/api/audit/stream` and look for a matching audit entry with `ESCALATION_APPROVE` or `ESCALATION_DENY` decision in the `policyClause` field. Now correctly returns `"approved"`, `"denied"`, or `"timeout"`.
+
+---
+
+## 11. `governance.ts` doesn't fire webhooks on escalation resolution (FIXED)
+
+**File:** `packages/oracle-server/src/routes/governance.ts`
+
+**Root cause:** The governance API route (used by the dashboard's EscalationsPanel) resolved escalations with direct SQL but never called `notifyEscalation()` or `notifySlack()`. The admin API route (`admin.ts`) correctly fired both, creating inconsistency: escalations resolved via the dashboard received no webhook notification.
+
+**Fix:** Added `notifyEscalation()` and `notifySlack()` calls to the governance route's escalation resolution handler. Also added `recordSpend()` on APPROVE (same fix as Bug #9).
+
+---
+
+## 12. `sentinelContract.ts` circuit breaker never recovers (FIXED)
+
+**File:** `packages/oracle-server/src/services/sentinelContract.ts`
+
+**Root cause:** The `getTenantClient()` function cached `clientPromise` permanently. If the first T3N client initialization failed, `clientPromise` resolved to `null` and every subsequent call returned the same `null` without retrying. The circuit breaker's `RETRY_INTERVAL_MS` (60s) appeared to retry but always received the same failed promise. The system was permanently stuck in "contract unavailable" mode until server restart.
+
+**Fix:** When `getTenantClient()` fails, `clientPromise` is now set back to `null` so the next call creates a fresh client. The `markContractDown()` logic was simplified: `lastAttemptTime` is set before every attempt, and `contractAvailable` is only set to `true` on success. The circuit breaker uses `lastAttemptTime` to rate-limit retries to once per 60s, but each retry creates a fresh client attempt.
+
+---
+
+## 13. `package.json` dry-run script uses `require()` in ESM context (FIXED)
+
+**File:** `package.json`
+
+**Root cause:** The `dry-run` script used `require()` to import the simulator module:
+```
+"dry-run": "tsx -e \"const { runDryRun } = require(...)\""
+```
+Since the root `package.json` declares `"type": "module"`, `require()` is not available in the ESM context. The script would throw `ReferenceError: require is not defined`.
+
+**Fix:** Replaced `require()` with dynamic `import()` ESM syntax:
+```
+"dry-run": "tsx -e \"import { runDryRun } from './packages/policy-engine/src/simulator.js'; ...\""
+```
+
+---
+
+## 14. No Zod validation on any API route (FIXED)
+
+**Files:** `packages/oracle-server/src/routes/*.ts`
+
+**Root cause:** All API routes accepted raw `req.body` without input validation. Malformed or malicious JSON requests could crash the server with uncaught exceptions (TypeError accessing properties of undefined, NaN values propagating into SQL, etc.). The `compliance.ts` route had manual `if (!agentDid)` checks for only 3 fields, leaving nested objects and types unchecked.
+
+**Fix:** Added Zod schemas for all route inputs:
+- `compliance.ts`: `CheckSchema` with nested `proposedAction` object, `amount` type validation, `requestId` string length
+- `admin.ts`: `RegisterSchema`, `RevokeSchema`, `SeedPolicySchema`, `ResolveAdminSchema`
+- `governance.ts`: `ProposalSchema`, `VoteSchema`, `ResolveSchema`
+- All catch blocks now handle `z.ZodError` separately with 400 status and detailed field errors
+
+---
+
+## 15. No graceful shutdown handler for Express server (FIXED)
+
+**File:** `packages/oracle-server/src/index.ts`
+
+**Root cause:** The Express server had no `SIGINT`/`SIGTERM` handler. Killing the process would abruptly close the SQLite database without finalizing WAL transactions, risking database corruption.
+
+**Fix:** Added `gracefulShutdown()` function registered on `SIGINT` and `SIGTERM` that calls `closeDb()` before exiting. Added request logging middleware for observability.
+
+---
+
+## 16. No TypeScript config for oracle-server package (FIXED)
+
+**File:** `packages/oracle-server/tsconfig.json` (created)
+
+**Root cause:** The `packages/oracle-server/` directory had no `tsconfig.json`. The root `tsconfig.json` was used but it excluded `**/*.test.ts` and had no package-specific settings. The CI's `npx tsc --noEmit` would not properly type-check the oracle server's TypeScript files.
+
+**Fix:** Created `packages/oracle-server/tsconfig.json` with ES2022 target, Bundler module resolution, and strict mode enabled.
+
+---
+
+## 17. Diagnostic contract uses same WIT namespace as sentinel contract (FIXED)
+
+**File:** `contracts/diagnostic-contract/wit/world.wit`
+
+**Root cause:** The diagnostic contract's WIT file used `package z:sentinel-compliance@1.0.0` — the same package name as the full sentinel compliance contract. Since the diagnostic contract has a different interface (no host imports, different `generic-input` shape), wit-bindgen would generate incompatible bindings under the same namespace. Building both contracts in the same workspace would cause type conflicts.
+
+**Fix:** Changed to `package z:sentinel-diagnostic@0.1.0` with `world sentinel-diagnostic` and updated the Rust code to import from `z::sentinel_diagnostic::contracts`.

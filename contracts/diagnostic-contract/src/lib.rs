@@ -1,10 +1,10 @@
 wit_bindgen::generate!({
-    world: "sentinel-compliance",
+    world: "sentinel-diagnostic",
     path: "wit",
     generate_all,
 });
 
-use exports::z::sentinel_compliance::contracts::{GenericInput, Guest};
+use exports::z::sentinel_diagnostic::contracts::{GenericInput, Guest};
 
 struct Component;
 
