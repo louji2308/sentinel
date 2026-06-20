@@ -17,10 +17,6 @@
     "demo": "tsx scripts/05-run-demo.ts",
     "dev": "concurrently \"npm run oracle\" \"npm run dashboard\"",
     "gen:keys": "tsx scripts/generate-agent-keys.ts",
-    "test": "npm run test:policy-engine && npm run test:oracle",
-    "test:policy-engine": "cd packages/policy-engine && npx vitest run",
-    "test:oracle": "cd packages/oracle-server && npx vitest run",
-    "test:watch": "cd packages/oracle-server && npx vitest",
     "lint": "npx tsc --noEmit",
     "lint:oracle": "cd packages/oracle-server && npx tsc --noEmit",
     "typecheck": "npx tsc --noEmit",
@@ -28,6 +24,8 @@
     "deploy:contract": "tsx scripts/03-deploy-contract.ts",
     "seed:policies": "tsx scripts/04-seed-policies.ts",
     "setup:all": "npm run setup && npm run build:contract && npm run deploy:contract && npm run seed:policies",
+    "seed:governance": "tsx scripts/06-seed-governance.ts",
+    "view:governance": "tsx scripts/07-view-governance.ts",
     "verify:receipt": "tsx scripts/verify-receipt-standalone.ts",
     "dry-run": "tsx -e \"import { runDryRun } from './packages/policy-engine/src/simulator.js'; console.log(JSON.stringify(runDryRun({ agentType: 'travel-booking', credentialStatus: 'active', action: 'book_flight', resourceType: 'TravelSystem', resourceDomain: 'travel', amount: 10000 }), null, 2))\""
   },
@@ -35,8 +33,7 @@
     "concurrently": "^8.2.0",
     "dotenv": "^16.4.5",
     "tsx": "^4.7.0",
-    "typescript": "^5.4.0",
-    "vitest": "^3.1.0"
+    "typescript": "^5.4.0"
   },
   "dependencies": {
     "@terminal3/t3n-sdk": "^3.9.0"

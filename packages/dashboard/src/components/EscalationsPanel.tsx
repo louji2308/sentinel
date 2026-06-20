@@ -48,7 +48,7 @@ export function EscalationsPanel() {
           <tr key={e.escalationId} className="border-t border-white/5 transition hover:bg-white/[0.03]">
             <Td mono>{e.agentDid.split(":").pop()?.slice(0, 12)}…</Td>
             <Td>${e.amount.toLocaleString()}</Td>
-            <Td className="max-w-[200px] truncate text-muted">{e.reason}</Td>
+            <Td><span className="max-w-[200px] truncate text-muted block">{e.reason}</span></Td>
             <Td muted>{new Date(e.createdAt).toLocaleString()}</Td>
             <Td>
               <div className="flex gap-2">

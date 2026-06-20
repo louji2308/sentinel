@@ -11,7 +11,7 @@ export default function GovernancePage() {
         <h1 className="animate-rise delay-1 mb-8 text-4xl font-light">Operator Controls</h1>
 
         <div className="animate-fade delay-2 space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="space-y-6">
             <EscalationsPanel />
             <MultiSigWidget />
           </div>
