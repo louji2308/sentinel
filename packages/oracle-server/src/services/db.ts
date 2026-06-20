@@ -297,7 +297,7 @@ export function insertEscalation(esc: {
   reason: string;
 }): void {
   db.prepare(`
-    INSERT OR IGNORE INTO escalations
+    INSERT OR REPLACE INTO escalations
     (escalation_id, agent_did, request_id, action, amount, reason, status, created_at)
     VALUES (@escalationId, @agentDid, @requestId, @action, @amount, @reason, 'pending', @createdAt)
   `).run({
