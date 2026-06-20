@@ -28,7 +28,7 @@ async function main() {
   const environment = (process.env.T3N_ENVIRONMENT ?? "testnet") as "testnet" | "production";
   const tenantDid = process.env.SENTINEL_TENANT_DID;
   const contractTail = process.env.CONTRACT_TAIL;
-  const contractVersion = process.env.CONTRACT_VERSION;
+  const contractVersion = process.env.CONTRACT_VERSION ?? "1.0.0";
 
   if (!apiKey) { throw new Error("T3N_API_KEY not set in .env"); }
   if (!tenantDid) { throw new Error("SENTINEL_TENANT_DID not set in .env"); }

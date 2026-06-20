@@ -1,4 +1,5 @@
 import * as cedar from "@cedar-policy/cedar-wasm";
+import type { CedarValueJson } from "@cedar-policy/cedar-wasm";
 import crypto from "crypto";
 
 export const CEDAR_POLICIES: Record<string, string> = {
@@ -168,7 +169,7 @@ export async function evaluatePolicy(
       return {
         decision: "DENY",
         matchedPolicyId: "eval-error",
-        reason: `Policy evaluation failed: ${result.errors.map(e => e.error ?? e).join("; ")}. Defaulting to DENY (fail-closed).`,
+        reason: `Policy evaluation failed: ${result.errors.map(e => e.message ?? String(e)).join("; ")}. Defaulting to DENY (fail-closed).`,
         policyHash,
       };
     }
@@ -245,7 +246,7 @@ function buildCedarEntities(principal: PolicyPrincipal, resource: PolicyResource
         credentialType: principal.credentialType,
         spendCap: principal.spendCap,
         credentialExpiresAt: principal.credentialExpiresAt,
-      },
+      } as Record<string, CedarValueJson>,
       parents: [],
     },
     {
@@ -253,7 +254,7 @@ function buildCedarEntities(principal: PolicyPrincipal, resource: PolicyResource
       attrs: {
         domain: resource.domain,
         amount: resource.amount ?? 0,
-      },
+      } as Record<string, CedarValueJson>,
       parents: [],
     },
   ];

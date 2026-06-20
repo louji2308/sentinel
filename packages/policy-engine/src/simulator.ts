@@ -27,7 +27,7 @@ export interface DryRunResult {
   disclaimer: string;
 }
 
-export function runDryRun(input: DryRunInput): DryRunResult {
+export async function runDryRun(input: DryRunInput): Promise<DryRunResult> {
   const principal = {
     did: `did:t3n:simulation-${Date.now()}`,
     credentialStatus: input.credentialStatus as "active" | "revoked" | "suspended",
@@ -50,7 +50,7 @@ export function runDryRun(input: DryRunInput): DryRunResult {
     requestId: `sim-${Date.now()}`,
   };
 
-  const result = evaluatePolicy(principal, input.action, resource, context);
+  const result = await evaluatePolicy(principal, input.action, resource, context);
 
   return {
     decision: result.decision as "PERMIT" | "DENY" | "ESCALATE",

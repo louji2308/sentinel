@@ -48,9 +48,12 @@ export async function createAuthenticatedClient(
   );
   await Promise.race([handshakePromise, timeoutPromise]);
 
-  const authResult = await client.authenticate(createEthAuthInput(address));
+  const authResult = await client.authenticate(createEthAuthInput(address)) as unknown;
 
-  const did = authResult.value ?? authResult.did?.value ?? authResult.did;
+  const did: string = authResult instanceof Uint8Array
+    ? new TextDecoder().decode(authResult)
+    : (authResult as any)?.value ?? (authResult as any)?.did?.value ?? String(authResult);
+
   if (!did || !did.startsWith("did:t3n:")) {
     throw new Error(`Authentication produced invalid DID: ${JSON.stringify(did)}`);
   }
