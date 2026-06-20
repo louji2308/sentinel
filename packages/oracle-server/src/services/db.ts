@@ -10,12 +10,33 @@ fs.mkdirSync(DB_DIR, { recursive: true });
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
+db.pragma("busy_timeout = 5000");
 
-// Migration: add timestamp column to spend_ledger for existing databases
-try {
-  db.exec("ALTER TABLE spend_ledger ADD COLUMN timestamp INTEGER NOT NULL DEFAULT 0");
-} catch {
-  // Column already exists — migration already applied
+class StmtCache {
+  private cache = new Map<string, Database.Statement>();
+
+  get(sql: string): Database.Statement {
+    let stmt = this.cache.get(sql);
+    if (!stmt) {
+      stmt = db.prepare(sql);
+      this.cache.set(sql, stmt);
+    }
+    return stmt;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+const stmt = new StmtCache();
+
+const MIGRATIONS: string[] = [
+  `ALTER TABLE spend_ledger ADD COLUMN timestamp INTEGER NOT NULL DEFAULT 0`,
+];
+
+for (const sql of MIGRATIONS) {
+  try { db.exec(sql); } catch { }
 }
 
 db.exec(`
@@ -105,30 +126,53 @@ function getWindowKey(timestampMs: number, type: "hourly" | "daily" | "weekly"):
   return String(Math.floor(ts / 86400));
 }
 
+const recordSpendStmt = stmt.get(`
+  INSERT INTO spend_ledger (did, window_key, window_type, amount, timestamp)
+  VALUES (?, ?, ?, ?, ?)
+  ON CONFLICT(did, window_key, window_type) DO UPDATE SET amount = amount + excluded.amount, timestamp = MAX(timestamp, excluded.timestamp)
+`);
+
+const recordSpendTx = db.transaction((entries: [string, number, number, "hourly" | "daily" | "weekly"][]) => {
+  for (const [did, amount, ts, windowType] of entries) {
+    const windowKey = getWindowKey(ts, windowType);
+    recordSpendStmt.run(did, windowKey, windowType, Math.floor(amount), Math.floor(ts));
+  }
+});
+
 export function recordSpend(did: string, amount: number, timestampMs: number, windowType: "hourly" | "daily" | "weekly"): void {
-  const windowKey = getWindowKey(timestampMs, windowType);
-  const ts = Math.floor(timestampMs);
-  db.prepare(`
-    INSERT INTO spend_ledger (did, window_key, window_type, amount, timestamp)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(did, window_key, window_type) DO UPDATE SET amount = amount + excluded.amount, timestamp = MAX(timestamp, excluded.timestamp)
-  `).run(did, windowKey, windowType, Math.floor(amount), ts);
+  const entries: [string, number, number, "hourly" | "daily" | "weekly"][] = [
+    [did, amount, timestampMs, windowType],
+  ];
+  recordSpendTx(entries);
 }
+
+export function recordSpendBatch(did: string, amount: number, timestampMs: number): void {
+  const entries: [string, number, number, "hourly" | "daily" | "weekly"][] = [
+    [did, amount, timestampMs, "daily"],
+    [did, amount, timestampMs, "hourly"],
+    [did, amount, timestampMs, "weekly"],
+  ];
+  recordSpendTx(entries);
+}
+
+const getCumulativeSpendStmt = stmt.get(
+  "SELECT amount FROM spend_ledger WHERE did = ? AND window_key = ? AND window_type = ?"
+);
+
+const getSpendHistoryStmt = stmt.get(`
+  SELECT window_key, amount FROM spend_ledger
+  WHERE did = ? AND window_type = ?
+  ORDER BY window_key DESC LIMIT ?
+`);
 
 export function getCumulativeSpend(did: string, timestampMs: number, windowType: "hourly" | "daily" | "weekly"): number {
   const windowKey = getWindowKey(timestampMs, windowType);
-  const row = db.prepare(
-    "SELECT amount FROM spend_ledger WHERE did = ? AND window_key = ? AND window_type = ?"
-  ).get(did, windowKey, windowType) as { amount: number } | undefined;
+  const row = getCumulativeSpendStmt.get(did, windowKey, windowType) as { amount: number } | undefined;
   return row?.amount ?? 0;
 }
 
 export function getSpendHistory(did: string, windowType: "daily", limit = 30) {
-  return db.prepare(`
-    SELECT window_key, amount FROM spend_ledger
-    WHERE did = ? AND window_type = ?
-    ORDER BY window_key DESC LIMIT ?
-  `).all(did, windowType, limit) as { window_key: string; amount: number }[];
+  return getSpendHistoryStmt.all(did, windowType, limit) as { window_key: string; amount: number }[];
 }
 
 export function upsertAgent(agent: {
@@ -381,17 +425,21 @@ export function getPendingProposals() {
     }));
 }
 
+const getCachedStmt = stmt.get("SELECT response FROM request_cache WHERE request_id = ? AND created_at > ?");
+const setCachedStmt = stmt.get("INSERT OR REPLACE INTO request_cache (request_id, response, created_at) VALUES (?, ?, ?)");
+const cacheCleanupStmt = stmt.get("DELETE FROM request_cache WHERE created_at < ?");
+
 export function getCachedResponse(requestId: string): string | null {
-  const row = db.prepare("SELECT response FROM request_cache WHERE request_id = ? AND created_at > ?").get(requestId, Date.now() - 86400000) as { response: string } | undefined;
+  const row = getCachedStmt.get(requestId, Date.now() - 86400000) as { response: string } | undefined;
   return row?.response ?? null;
 }
 
 export function setCachedResponse(requestId: string, response: string): void {
-  db.prepare("INSERT OR REPLACE INTO request_cache (request_id, response, created_at) VALUES (?, ?, ?)").run(requestId, response, Date.now());
+  setCachedStmt.run(requestId, response, Date.now());
 }
 
 export function cacheCleanup(): void {
-  db.prepare("DELETE FROM request_cache WHERE created_at < ?").run(Date.now() - 86400000);
+  cacheCleanupStmt.run(Date.now() - 86400000);
 }
 
 export function walCheckpoint(): void {

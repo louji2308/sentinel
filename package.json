@@ -17,7 +17,13 @@
     "demo": "tsx scripts/05-run-demo.ts",
     "dev": "concurrently \"npm run oracle\" \"npm run dashboard\"",
     "gen:keys": "tsx scripts/generate-agent-keys.ts",
-    "test:policy": "tsx scripts/test-policy.ts",
+    "test": "npm run test:policy-engine && npm run test:oracle",
+    "test:policy-engine": "cd packages/policy-engine && npx vitest run",
+    "test:oracle": "cd packages/oracle-server && npx vitest run",
+    "test:watch": "cd packages/oracle-server && npx vitest",
+    "lint": "npx tsc --noEmit",
+    "lint:oracle": "cd packages/oracle-server && npx tsc --noEmit",
+    "typecheck": "npx tsc --noEmit",
     "build:contract": "cd contracts/sentinel-contract && cargo build --target wasm32-wasip2 --release",
     "deploy:contract": "tsx scripts/03-deploy-contract.ts",
     "seed:policies": "tsx scripts/04-seed-policies.ts",
@@ -29,7 +35,8 @@
     "concurrently": "^8.2.0",
     "dotenv": "^16.4.5",
     "tsx": "^4.7.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^3.1.0"
   },
   "dependencies": {
     "@terminal3/t3n-sdk": "^3.9.0"

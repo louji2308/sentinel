@@ -7,6 +7,7 @@
     "@cedar-policy/cedar-wasm": "latest"
   },
   "devDependencies": {
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^3.2.6"
   }
 }

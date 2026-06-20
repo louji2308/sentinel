@@ -6,3 +6,8 @@ target/
 .next/
 .qodo/
 .opencode/
+data/
+*.db
+*.db-wal
+*.db-shm
+.test-data/

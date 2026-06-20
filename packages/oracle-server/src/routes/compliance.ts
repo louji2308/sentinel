@@ -5,7 +5,7 @@ import { callContract } from "../services/sentinelContract.js";
 import { evaluatePolicy } from "@sentinel/policy-engine";
 import { getAgent } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
-import { getCumulativeSpend, recordSpend, insertEscalation, getCachedResponse, setCachedResponse, upsertReceipt } from "../services/db.js";
+import { getCumulativeSpend, recordSpendBatch, insertEscalation, getCachedResponse, setCachedResponse, upsertReceipt } from "../services/db.js";
 import { notifyEscalation, notifySlack } from "../services/webhooks.js";
 
 const CheckSchema = z.object({
@@ -35,7 +35,7 @@ function parseSpendCap(scope: string[]): number {
 
 const router = Router();
 
-router.post("/check", async (req, res) => {
+router.post("/check", async (req, res, next) => {
   try {
     const parsed = CheckSchema.parse(req.body);
     const { agentDid, proposedAction, requestId, timestamp } = parsed;
@@ -143,9 +143,7 @@ router.post("/check", async (req, res) => {
     });
 
     if (policyResult.decision === "PERMIT" && proposedAction.amount) {
-      recordSpend(agentDid, proposedAction.amount, now, "daily");
-      recordSpend(agentDid, proposedAction.amount, now, "hourly");
-      recordSpend(agentDid, proposedAction.amount, now, "weekly");
+      recordSpendBatch(agentDid, proposedAction.amount, now);
     }
 
     if (policyResult.decision === "ESCALATE") {
@@ -204,12 +202,8 @@ router.post("/check", async (req, res) => {
     setCachedResponse(requestId, JSON.stringify(response));
 
     res.json(response);
-  } catch (err: any) {
-    console.error("[Compliance] Error:", err);
-    if (err instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: err.errors });
-    }
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    next(err);
   }
 });
 

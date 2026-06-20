@@ -3,7 +3,7 @@ import { z } from "zod";
 import { callContractWithAdmin } from "../services/sentinelContract.js";
 import { registerAgent, getAgent, updateAgentStatus, getAllAgents } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
-import db, { recordSpend } from "../services/db.js";
+import db, { recordSpendBatch } from "../services/db.js";
 import { notifyEscalation, notifySlack } from "../services/webhooks.js";
 
 const RegisterSchema = z.object({
@@ -159,9 +159,7 @@ router.post("/resolve-escalation", async (req, res) => {
     if (decision === "APPROVE") {
       const escRow = db.prepare("SELECT agent_did, amount, request_id FROM escalations WHERE escalation_id = ?").get(escalationId) as any;
       if (escRow?.amount) {
-        recordSpend(escRow.agent_did, escRow.amount, Date.now(), "daily");
-        recordSpend(escRow.agent_did, escRow.amount, Date.now(), "hourly");
-        recordSpend(escRow.agent_did, escRow.amount, Date.now(), "weekly");
+        recordSpendBatch(escRow.agent_did, escRow.amount, Date.now());
       }
     }
 

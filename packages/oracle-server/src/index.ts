@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import compression from "compression";
+import pinoHttp from "pino-http";
 import complianceRouter from "./routes/compliance.js";
 import auditRouter from "./routes/audit.js";
 import auditVelocityRouter from "./routes/audit-velocity.js";
@@ -10,41 +12,36 @@ import governanceRouter from "./routes/governance.js";
 import { registerAgent, clearCache } from "./services/agentRegistry.js";
 import { clearCache as clearAuditCache, appendEntry } from "./services/auditLog.js";
 import { callContractWithAdmin, isContractAvailable } from "./services/sentinelContract.js";
+import { logger } from "./lib/logger.js";
+import { errorHandler } from "./middleware/errorHandler.js";
+import { requestId } from "./middleware/requestId.js";
+import { rateLimiter } from "./middleware/rateLimit.js";
+import { closeDb, periodicCleanup } from "./services/db.js";
 
 const app = express();
 const PORT = parseInt(process.env.ORACLE_PORT || "3001", 10);
 
 app.use(helmet());
-app.use(cors());
+app.use(compression());
+app.use(cors({ origin: process.env.CORS_ORIGIN || "*" }));
 app.use(express.json({ limit: "1mb" }));
+app.use(requestId);
+app.use(pinoHttp({ logger, autoLogging: { ignore: req => req.url === "/api/health" } }));
 
 app.use("/api/compliance", complianceRouter);
 app.use("/api/audit", auditRouter);
 app.use("/api/audit", auditVelocityRouter);
-app.use("/api/admin", adminRouter);
-app.use("/api/governance", governanceRouter);
+app.use("/api/admin", rateLimiter({ windowMs: 60000, max: 30 }), adminRouter);
+app.use("/api/governance", rateLimiter({ windowMs: 60000, max: 20 }), governanceRouter);
 
-// Periodic cache cleanup + WAL checkpoint (every minute)
-setInterval(() => {
-  const { periodicCleanup } = require("./services/db.js");
-  periodicCleanup();
-}, 60_000);
+setInterval(periodicCleanup, 60_000);
 
-// Request logging middleware (non-blocking)
-app.use((req, _res, next) => {
-  if (req.path.startsWith("/api/")) {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  }
-  next();
-});
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
     timestamp: Date.now(),
+    uptime: process.uptime(),
     mode: isContractAvailable() ? "contract" : "local",
-    storage: isContractAvailable()
-      ? "TEE contract (persistent)"
-      : "Local in-memory (volatile — deploy contract for persistence)",
   });
 });
 
@@ -79,13 +76,10 @@ function seedLocalStores() {
     },
   ];
 
-  // Always seed local stores — this is the fallback that guarantees the dashboard works
   for (const agent of agents) {
     registerAgent(agent.did, agent);
-    console.log(`[Seed] Local agent: ${agent.did}`);
   }
 
-  // Seed demo audit entries so the dashboard isn't blank on first load
   const baseTs = (now - 120) * 1000;
   appendEntry({
     id: "log-demo-1", timestamp: baseTs, agentDid: "did:t3n:travel-agent-demo",
@@ -111,14 +105,9 @@ function seedLocalStores() {
     action: { type: "book_flight", resource: "TravelSystem", amount: 5000 },
     receiptId: "RCP-demo-deny-1",
   });
-
-  console.log(`[Seed] Local audit entries seeded: 4 demo verdicts.`);
-  console.log("[Seed] Dashboard will use local storage if TEE contract is unreachable.");
 }
 
 async function trySeedContract() {
-  console.log("[Seed] Attempting to seed TEE contract...");
-
   const now = Math.floor(Date.now() / 1000);
   const day = 86400;
 
@@ -206,65 +195,51 @@ forbid(
 
   for (const agent of agents) {
     const r = await callContractWithAdmin("register-agent", agent);
-    if (r.ok) {
-      seededCount++;
-      console.log(`[Seed] Contract agent: ${agent.agentDid}`);
-    }
+    if (r.ok) seededCount++;
   }
 
   for (const policy of policies) {
     const r = await callContractWithAdmin("seed-policy", policy);
-    if (r.ok) {
-      seededCount++;
-      console.log(`[Seed] Contract policy: ${policy.agentType}`);
-    }
+    if (r.ok) seededCount++;
   }
 
-  if (seededCount > 0) {
-    console.log(`[Seed] TEE contract seeded successfully (${seededCount} operations).`);
-    console.log("[Seed] Dashboard will use TEE contract for persistent storage.");
-  } else {
-    console.log("[Seed] TEE contract not reachable. Dashboard uses local storage (volatile).");
-  }
+  logger.info({ seededCount }, "Contract seeding complete");
 }
 
 async function start() {
-  // Reset any stale state
   clearCache();
   clearAuditCache();
 
-  // 1. Always seed local stores — this is the guarantee
   seedLocalStores();
 
-  // 2. Try seeding the contract — if it works, great; if not, local fallback covers us
   try {
     await trySeedContract();
-  } catch (err: any) {
-    console.warn("[Seed] Contract seeding error (non-fatal):", err.message);
+  } catch (err: unknown) {
+    logger.warn({ err }, "Contract seeding skipped (non-fatal)");
   }
 
-  app.listen(PORT, () => {
-    console.log(`\n[Oracle] Server running on http://localhost:${PORT}`);
-    console.log(`[Oracle] Health: http://localhost:${PORT}/api/health`);
-    console.log(`[Oracle] Compliance: POST http://localhost:${PORT}/api/compliance/check`);
-    console.log(`[Oracle] Governance: GET http://localhost:${PORT}/api/governance/proposals`);
-    console.log(`[Oracle] Velocity: GET http://localhost:${PORT}/api/audit/velocity/:agentDid`);
-    console.log(`[Oracle] Dashboard: http://localhost:${PORT}/dashboard (or :3000)`);
-    console.log(`[Oracle] Mode: ${process.env.T3N_API_KEY ? "hybrid (contract + local)" : "local only"}`);
-    console.log(`[Oracle] Storage: SQLite (persistent)`);
+  const server = app.listen(PORT, () => {
+    logger.info({ port: PORT, mode: process.env.T3N_API_KEY ? "hybrid" : "local" }, "Oracle server started");
   });
+
+  function gracefulShutdown(signal: string) {
+    logger.info({ signal }, "Shutting down gracefully");
+    server.close(() => {
+      closeDb();
+      process.exit(0);
+    });
+    setTimeout(() => {
+      logger.error("Forced shutdown after timeout");
+      process.exit(1);
+    }, 10_000);
+  }
+
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 }
+
+app.use(errorHandler);
 
 start();
-
-function gracefulShutdown(signal: string) {
-  console.log(`\n[Oracle] Received ${signal}. Shutting down gracefully...`);
-  const { closeDb } = require("./services/db.js");
-  closeDb();
-  process.exit(0);
-}
-
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 export default app;

@@ -365,6 +365,13 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 | SQLite WAL checkpoint optimization | ✅ | periodicCleanup() runs every 60s |
 | TypeScript clean compile (oracle-server) | ✅ | Zero errors with strict mode |
 | 16 internal bugs found + fixed | ✅ | See BUGS.md — audit velocity, record_spend, circuit breaker, ESM, etc. |
+| Structured logging (pino) | ✅ | Replaces console.log across all routes |
+| Centralized error handler | ✅ | errorHandler middleware + custom AppError classes |
+| Rate limiting on admin/governance | ✅ | 30 req/min admin, 20 req/min governance |
+| Prepared statement caching | ✅ | StmtCache class in db.ts |
+| Transaction batching for spend recording | ✅ | recordSpendBatch wraps all 3 windows in one transaction |
+| Unit tests (vitest) | ✅ | 16 tests across DB, policy engine, and API routes |
+| `npm test` / `npm run lint` scripts | ✅ | Root package.json scripts configured |
 | Demo video recorded | ❌ | Not yet recorded |
 
 ---
@@ -402,11 +409,30 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 - ✅ 16 deep bugs fixed — audit velocity columns, Rust record_spend, Decision caching, circuit breaker blackout, ESM dry-run, governance dedup, Zod validation, graceful shutdown, WIT namespace conflict, and more (see [`BUGS.md`](./BUGS.md))
 - ✅ TypeScript strict mode compatibility — oracle-server compiles with zero errors
 
+### v4.0 (Phase 4 — Production Hardening)
+- ✅ Structured logging — `pino` replaces `console.log` across all routes and services
+- ✅ Request ID tracing — every request gets a UUID via `express-request-id` middleware
+- ✅ Centralized error handling — `errorHandler` middleware catches all errors, Zod errors return structured 400s
+- ✅ Custom error classes — `AppError`, `ValidationError`, `NotFoundError`, `ConflictError`, `RateLimitError`
+- ✅ Rate limiting — admin endpoints limited to 30 req/min, governance to 20 req/min
+- ✅ Response compression — `compression` middleware enables gzip on all API responses
+- ✅ CORS origin whitelist — configurable via `CORS_ORIGIN` env var
+- ✅ Environment validation — `SENTINEL_DB_DIR`, `CORS_ORIGIN`, `LOG_LEVEL` added to `.env.example`
+- ✅ Prepared statement caching — `StmtCache` class reuses compiled SQLite statements across calls
+- ✅ Transaction batching — `recordSpendBatch` wraps daily + hourly + weekly updates in a single SQLite transaction
+- ✅ Unit test infrastructure — vitest configured in oracle-server and policy-engine packages
+- ✅ Database tests — 7 tests for spend_ledger, request_cache, receipts, audit_log
+- ✅ Policy engine tests — 5 tests for Cedar evaluation (permit, escalate, deny, burst, over-cap)
+- ✅ API route tests — 4 tests for compliance check with supertest (PERMIT, 400, DENY)
+- ✅ Root `package.json` scripts — `npm test`, `npm run lint`, `npm run typecheck` added
+- ✅ Clean git — `.gitignore` covers `.test-data` directories
+
 ### Future (post-hackathon)
 - P2P agent-to-contract compliance checks (remove oracle server from the critical path)
 - Automated policy soundness checking via Cedar validator in CI
 - Policy versioning with seed-policy metadata
-- Rate limiting on governance endpoints
+- OpenAPI/Swagger documentation auto-generated from Zod schemas
+- ESLint + Prettier configuration for consistent code style
 - Full error-union types replacing `any`
 
 ---
