@@ -4,7 +4,9 @@ import cors from "cors";
 import helmet from "helmet";
 import complianceRouter from "./routes/compliance.js";
 import auditRouter from "./routes/audit.js";
+import auditVelocityRouter from "./routes/audit-velocity.js";
 import adminRouter from "./routes/admin.js";
+import governanceRouter from "./routes/governance.js";
 import { registerAgent, clearCache } from "./services/agentRegistry.js";
 import { clearCache as clearAuditCache, appendEntry } from "./services/auditLog.js";
 import { callContractWithAdmin, isContractAvailable } from "./services/sentinelContract.js";
@@ -18,7 +20,9 @@ app.use(express.json({ limit: "1mb" }));
 
 app.use("/api/compliance", complianceRouter);
 app.use("/api/audit", auditRouter);
+app.use("/api/audit", auditVelocityRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/governance", governanceRouter);
 app.get("/api/health", (_req, res) => {
   res.json({
     status: "ok",
@@ -229,8 +233,11 @@ async function start() {
     console.log(`\n[Oracle] Server running on http://localhost:${PORT}`);
     console.log(`[Oracle] Health: http://localhost:${PORT}/api/health`);
     console.log(`[Oracle] Compliance: POST http://localhost:${PORT}/api/compliance/check`);
+    console.log(`[Oracle] Governance: GET http://localhost:${PORT}/api/governance/proposals`);
+    console.log(`[Oracle] Velocity: GET http://localhost:${PORT}/api/audit/velocity/:agentDid`);
     console.log(`[Oracle] Dashboard: http://localhost:${PORT}/dashboard (or :3000)`);
     console.log(`[Oracle] Mode: ${process.env.T3N_API_KEY ? "hybrid (contract + local)" : "local only"}`);
+    console.log(`[Oracle] Storage: SQLite (persistent)`);
   });
 }
 

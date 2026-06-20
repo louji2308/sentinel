@@ -2,6 +2,7 @@ import { Router } from "express";
 import { callContractWithAdmin } from "../services/sentinelContract.js";
 import { registerAgent, getAgent, updateAgentStatus, getAllAgents } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
+import { notifyEscalation, notifySlack } from "../services/webhooks.js";
 
 const router = Router();
 
@@ -150,6 +151,36 @@ router.post("/resolve-escalation", async (req, res) => {
       receiptId: `res-${escalationId}`,
       operatorAction: normalized === "APPROVE" ? "approved" : "denied",
     });
+
+    // Fire webhook notification
+    notifyEscalation({
+      eventType: "escalation.resolved",
+      escalationId,
+      agentDid: escalationId,
+      requestId: escalationId,
+      amount: 0,
+      reason: reason || "Resolved by operator",
+      status: normalized === "APPROVE" ? "approved" : "denied",
+      createdAt: Date.now(),
+      resolvedAt: Date.now(),
+      resolution: normalized,
+      resolvedBy: "operator",
+      dashboardUrl: "http://localhost:3000/governance",
+    }).catch(() => {});
+    notifySlack({
+      eventType: "escalation.resolved",
+      escalationId,
+      agentDid: escalationId,
+      requestId: escalationId,
+      amount: 0,
+      reason: reason || "Resolved by operator",
+      status: normalized === "APPROVE" ? "approved" : "denied",
+      createdAt: Date.now(),
+      resolvedAt: Date.now(),
+      resolution: normalized,
+      resolvedBy: "operator",
+      dashboardUrl: "http://localhost:3000/governance",
+    }).catch(() => {});
 
     // Try the contract
     const contractResult = await callContractWithAdmin("resolve-escalation", {

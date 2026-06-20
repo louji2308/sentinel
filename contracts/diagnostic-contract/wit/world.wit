@@ -1,0 +1,20 @@
+package z:sentinel-compliance@1.0.0;
+
+interface contracts {
+  record generic-input {
+    input: option<list<u8>>,
+    context: option<list<u8>>,
+  }
+
+  evaluate-compliance: func(req: generic-input) -> result<list<u8>, string>;
+  register-agent:      func(req: generic-input) -> result<list<u8>, string>;
+  seed-policy:         func(req: generic-input) -> result<list<u8>, string>;
+  revoke-agent:        func(req: generic-input) -> result<list<u8>, string>;
+  verify-receipt:      func(req: generic-input) -> result<list<u8>, string>;
+  query-audit-log:     func(req: generic-input) -> result<list<u8>, string>;
+  resolve-escalation:  func(req: generic-input) -> result<list<u8>, string>;
+}
+
+world sentinel-compliance {
+  export contracts;
+}

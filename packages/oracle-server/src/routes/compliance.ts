@@ -4,7 +4,8 @@ import { callContract } from "../services/sentinelContract.js";
 import { evaluatePolicy } from "@sentinel/policy-engine";
 import { getAgent } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
-import { getCumulativeSpend, recordSpend, insertEscalation } from "../services/db.js";
+import { getCumulativeSpend, recordSpend, insertEscalation, getSpendHistory, getAgent as getAgentFromDb } from "../services/db.js";
+import { notifyEscalation, notifySlack } from "../services/webhooks.js";
 
 const router = Router();
 
@@ -107,14 +108,37 @@ router.post("/check", async (req, res) => {
     }
 
     if (policyResult.decision === "ESCALATE") {
+      const escalationId = `ESC-${requestId.slice(0, 8)}`;
       insertEscalation({
-        escalationId: `ESC-${requestId.slice(0, 8)}`,
+        escalationId,
         agentDid,
         requestId,
         action: proposedAction,
         amount: proposedAction.amount || 0,
         reason: policyResult.reason,
       });
+      notifyEscalation({
+        eventType: "escalation.created",
+        escalationId,
+        agentDid,
+        requestId,
+        amount: proposedAction.amount || 0,
+        reason: policyResult.reason,
+        status: "pending",
+        createdAt: Date.now(),
+        dashboardUrl: `http://localhost:3000/governance`,
+      }).catch(() => {});
+      notifySlack({
+        eventType: "escalation.created",
+        escalationId,
+        agentDid,
+        requestId,
+        amount: proposedAction.amount || 0,
+        reason: policyResult.reason,
+        status: "pending",
+        createdAt: Date.now(),
+        dashboardUrl: `http://localhost:3000/governance`,
+      }).catch(() => {});
     }
 
     appendEntry({

@@ -163,6 +163,13 @@ Every API call attempts the TEE contract first. If the contract is unreachable (
 | `GET /api/audit/stream` | Audit log stream with optional `since` filter | `query-audit-log` |
 | `GET /api/audit/export` | Download audit log as JSON | `query-audit-log` |
 | `GET /api/audit/receipt/:id` | Verify a Compliance Receipt | `verify-receipt` |
+| `GET /api/audit/velocity/:agentDid` | Spend velocity for an agent (hourly/daily/weekly) | — (SQLite) |
+| `GET /api/audit/velocity/summary` | Spend velocity across all agents | — (SQLite) |
+| `GET /api/governance/escalations` | List pending escalations | — (SQLite) |
+| `POST /api/governance/escalations/:id/resolve` | Resolve an escalation (APPROVE/DENY) | — (SQLite) |
+| `GET /api/governance/proposals` | List multi-sig proposals | — (SQLite) |
+| `POST /api/governance/proposals` | Create a multi-sig proposal | — (SQLite) |
+| `POST /api/governance/proposals/:id/vote` | Vote on a proposal (yea/nay) | — (SQLite) |
 
 ### TEE Contract Functions
 
@@ -183,7 +190,11 @@ Every API call attempts the TEE contract first. If the contract is unreachable (
 - Policy clause display for every decision
 - Compliance Receipt verification
 - JSON export of the full audit trail
-- Pending escalations panel
+- Pending escalations panel with approve/deny actions
+- Spend velocity charts (hourly/daily/weekly windows)
+- Multi-sig governance proposals (M-of-N operator approval)
+- Oracle mode indicator (contract vs local)
+- 4-stat summary row (PERMIT/DENY/ESCALATE/Agents)
 
 ### Autonomous Agent Behavior
 
@@ -320,13 +331,15 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 | **Agent state persisted on T3N ledger** | ⛔ **Blocked** | Requires contract execution (same testnet issue) |
 | **Oracle calls real deployed contract** | ⛔ **Blocked** | Falls back to local engine + in-memory store transparently |
 | WIT host interfaces downgraded to @1.0.0 (Bug #1 Fix #1) | ✅ | Compiles cleanly for wasm32-wasip2 |
-| SQLite persistent local storage | 🟡 | better-sqlite3 installed, schema defined |
-| Sliding-window spend velocity (hourly + weekly) | 🟡 | Rust + TS implementation in progress |
-| Webhook escalation notifications | 🟡 | Implementation in progress |
-| Direct agent receipt verification + ReceiptWallet | 🟡 | Implementation in progress |
-| Dashboard v3.0 (velocity chart, escalations) | 🟡 | Components in progress |
-| Multi-sig governance MVP | 🟡 | Implementation in progress |
-| Diagnostic contract for T3N debugging | 🟡 | Bug #1 Fix #2 in progress |
+| SQLite persistent local storage | ✅ | Schema covers agents, audit, escalations, spend, receipts, proposals |
+| Sliding-window spend velocity (hourly + daily + weekly) | ✅ | Rust contract + TS engine + audit-velocity endpoint |
+| Webhook escalation notifications (Slack + generic) | ✅ | notifyEscalation + notifySlack fired on create/resolve |
+| Direct agent receipt verification + ReceiptWallet | ✅ | ReceiptWallet class + verifyReceipt exported from agentBase |
+| Dashboard v3.0 (velocity chart, escalations, governance) | ✅ | SpendVelocityChart, EscalationsPanel, MultiSigWidget |
+| Multi-sig governance MVP (M-of-N operator approval) | ✅ | Proposals table, vote/yea/nay, governance routes |
+| Diagnostic contract for T3N debugging | ✅ | contracts/diagnostic-contract — zero imports, echo pattern |
+| CI/CD hardening (integration tests, security audit, env check) | ✅ | Full integration test job, .env.example validation |
+| Governance dashboard page | ✅ | /governance page with escalations + proposals + quick actions |
 | Demo video recorded | ❌ | Not yet recorded |
 
 ---
@@ -344,17 +357,17 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 - Policy what-if simulator
 - GitHub Actions CI pipeline
 
-### v3.0 In Progress
+### v3.0 Complete
 - ✅ Bug #1 Fix #1 — WIT host interface versions downgraded from `@2.1.0` to `@1.0.0` for T3N compatibility (compiles)
-- 🟡 SQLite persistent storage — replaces in-memory Maps (better-sqlite3 installed)
-- 🟡 Sliding-window spend velocity — hourly + daily + weekly buckets (Rust + TS)
-- 🟡 Webhook escalation notifications — Slack + generic webhook support
-- 🟡 Direct agent-to-contract receipt verification + ReceiptWallet agent SDK
-- 🟡 Dashboard v3.0 — SpendVelocityChart, EscalationsPanel
-- 🟡 Multi-sig governance MVP — M-of-N operator approval for admin ops
-- 🟡 Bug #1 Fix #2 — Diagnostic minimal contract for T3N binary search
-- 🟡 CI/CD hardening — security audit, integration tests, Cedar policy validation
-- 🟡 Bug #2 & #3 documentation — ADK patterns guide
+- ✅ SQLite persistent storage — replaces in-memory Maps (better-sqlite3, full schema)
+- ✅ Sliding-window spend velocity — hourly + daily + weekly buckets (Rust + TS)
+- ✅ Webhook escalation notifications — Slack + generic webhook support
+- ✅ Direct agent-to-contract receipt verification + ReceiptWallet agent SDK
+- ✅ Dashboard v3.0 — SpendVelocityChart, EscalationsPanel, MultiSigWidget
+- ✅ Multi-sig governance MVP — M-of-N operator approval for admin ops
+- ✅ Bug #1 Fix #2 — Diagnostic minimal contract for T3N binary search
+- ✅ CI/CD hardening — security audit, integration tests, .env.example validation
+- ✅ Bug #2 & #3 documentation — ADK patterns guide
 
 ### Future (post-hackathon)
 - P2P agent-to-contract compliance checks (remove oracle server from the critical path)

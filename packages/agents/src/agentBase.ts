@@ -1,7 +1,9 @@
 import "dotenv/config";
 import { createAuthenticatedClient } from "@sentinel/t3-client";
+import { ReceiptWallet } from "./receipts.js";
 
 const ORACLE_URL = process.env.NEXT_PUBLIC_ORACLE_URL || "http://localhost:3001";
+export const receiptWallet = new ReceiptWallet();
 
 export interface ComplianceResult {
   requestId: string;
@@ -36,7 +38,17 @@ export async function requestCompliance(
     throw new Error(`Compliance check failed (${res.status}): ${err}`);
   }
 
-  return res.json();
+  const result: ComplianceResult = await res.json();
+
+  if (result.receipt?.receiptId) {
+    receiptWallet.store(
+      result.receipt.receiptId,
+      result.decision,
+      result.receipt.policyClause || result.receipt.policyClause || ""
+    );
+  }
+
+  return result;
 }
 
 export async function registerWithOracle(agentDid: string, credentialType?: string) {
@@ -56,10 +68,10 @@ export async function resolveEscalation(
   decision: "APPROVE" | "DENY",
   reason?: string
 ) {
-  const res = await fetch(`${ORACLE_URL}/api/admin/resolve-escalation`, {
+  const res = await fetch(`${ORACLE_URL}/api/governance/escalations/${encodeURIComponent(escalationId)}/resolve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ escalationId, decision, reason }),
+    body: JSON.stringify({ decision, reason }),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -112,31 +124,19 @@ export async function pollEscalation(
   console.log(`  \u231b Polling escalation ${escalationId}...`);
   for (let i = 0; i < maxAttempts; i++) {
     try {
-      const res = await fetch(`${ORACLE_URL}/api/audit/stream?since=0`);
+      const res = await fetch(`${ORACLE_URL}/api/governance/escalations`);
       if (res.ok) {
-        const data = await res.json();
-        const entries: any[] = data.entries || [];
-        const resolution = entries.find(
-          (e: any) =>
-            e.receiptId?.includes(escalationId) ||
-            e.id?.includes(escalationId) ||
-            (e.policyClause && e.policyClause.includes(escalationId))
-        );
-        if (resolution) {
-          const decision = resolution.decision;
-          if (decision === "ESCALATION_APPROVE") {
-            console.log(`  \u2705 Escalation ${escalationId} was APPROVED`);
-            return "approved";
-          }
-          if (decision === "ESCALATION_DENY") {
-            console.log(`  \u274c Escalation ${escalationId} was DENIED`);
-            return "denied";
-          }
-        }
+        const escalations: any[] = await res.json();
+        const match = escalations.find(e => e.escalationId === escalationId);
+        if (!match) return "approved";
       }
     } catch {}
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   console.log(`  \u23f0 Escalation ${escalationId} polling timed out`);
   return "timeout";
+}
+
+export async function verifyReceipt(receiptId: string, agentDid: string): Promise<boolean> {
+  return receiptWallet.verify(receiptId, agentDid);
 }

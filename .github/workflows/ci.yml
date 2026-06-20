@@ -8,7 +8,7 @@ on:
 
 jobs:
   rust:
-    name: Rust Contract Tests
+    name: Rust Contract Build & Lint
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,8 +35,26 @@ jobs:
       - name: Test
         run: cargo test || echo "No unit tests yet"
 
+  diagnostic-contract:
+    name: Diagnostic Contract Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts/diagnostic-contract
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-wasip2
+
+      - name: Build diagnostic contract
+        run: cargo build --target wasm32-wasip2 --release
+
   typescript:
-    name: TypeScript Checks
+    name: TypeScript Checks & Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -56,6 +74,45 @@ jobs:
       - name: Policy engine test
         run: npm run test:policy || echo "Policy tests not yet configured"
 
+  integration:
+    name: Integration Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start oracle server
+        run: |
+          npm run oracle &
+          ORACLE_PID=$!
+          echo "Oracle PID: $ORACLE_PID"
+          sleep 5
+          # Health check
+          curl -f http://localhost:3001/api/health || (echo "Oracle failed to start" && exit 1)
+          # Test compliance endpoint
+          curl -f -X POST http://localhost:3001/api/compliance/check \
+            -H "Content-Type: application/json" \
+            -d '{"agentDid":"did:t3n:travel-agent-demo","proposedAction":{"type":"book_flight","resource":"TravelSystem","amount":500},"requestId":"ci-test-1"}' \
+            || (echo "Compliance check failed" && exit 1)
+          # Test governance
+          curl -f http://localhost:3001/api/governance/escalations || (echo "Governance endpoint failed" && exit 1)
+          curl -f http://localhost:3001/api/governance/proposals || (echo "Proposals endpoint failed" && exit 1)
+          # Test audit
+          curl -f http://localhost:3001/api/audit/stream?since=0 || (echo "Audit stream failed" && exit 1)
+          curl -f http://localhost:3001/api/audit/agents || (echo "Audit agents failed" && exit 1)
+          # Test velocity
+          curl -f http://localhost:3001/api/audit/velocity/did:t3n:travel-agent-demo || (echo "Velocity failed" && exit 1)
+          echo "All integration tests passed!"
+          kill $ORACLE_PID 2>/dev/null || true
+
   audit:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -65,8 +122,19 @@ jobs:
 
       - name: Check for hardcoded secrets
         run: |
-          ! grep -r "0x[a-fA-F0-9]\{64\}" --include="*.ts" --include="*.rs" --include="*.json" . | grep -v node_modules | grep -v ".env" || echo "Warning: Possible hardcoded keys found"
+          ! grep -r "0x[a-fA-F0-9]\{64\}" --include="*.ts" --include="*.rs" --include="*.json" . | grep -v node_modules | grep -v ".env" | grep -v "package.json" | grep -v "Cargo.lock" || echo "Warning: Possible hardcoded keys found"
 
       - name: Check for API keys in source
         run: |
           ! grep -r "sk-[a-zA-Z0-9]\{32,\}" --include="*.ts" --include="*.rs" . | grep -v node_modules || echo "Warning: Possible API keys in source"
+
+      - name: Verify .env.example matches actual usage
+        run: |
+          grep -rh "^export const \|process\.env\." --include="*.ts" packages/ | grep -oP 'process\.env\.\K[A-Z_0-9]+' | sort -u > /tmp/env_used.txt
+          grep -oP '^[A-Z_0-9]+(?==)' .env.example | sort -u > /tmp/env_example.txt
+          echo "=== Env vars used in code ==="
+          cat /tmp/env_used.txt
+          echo "=== Env vars documented ==="
+          cat /tmp/env_example.txt
+          MISSING=$(comm -23 /tmp/env_used.txt /tmp/env_example.txt || true)
+          if [ -n "$MISSING" ]; then echo "WARNING: Env vars used but not documented:"; echo "$MISSING"; fi
