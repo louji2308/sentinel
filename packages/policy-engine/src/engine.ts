@@ -175,7 +175,8 @@ export async function evaluatePolicy(
     }
 
     decision = result.response.decision === "allow" ? "PERMIT" : "DENY";
-    matchedPolicyId = result.response.diagnostics?.reason?.[0] ?? "unknown";
+    const reasons = result.response.diagnostics?.reason;
+    matchedPolicyId = reasons?.[0] ?? (decision === "DENY" ? "implicit-deny" : "unknown");
   } catch (cedarError: any) {
     console.error("[Cedar] Evaluation error — defaulting to DENY:", cedarError.message);
     return {

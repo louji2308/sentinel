@@ -13,7 +13,7 @@ const CheckSchema = z.object({
   proposedAction: z.object({
     type: z.string().min(1),
     resource: z.string().min(1),
-    amount: z.number().positive().optional(),
+    amount: z.number().nonnegative().optional(),
     currency: z.string().optional(),
     metadata: z.record(z.unknown()).optional(),
   }),
