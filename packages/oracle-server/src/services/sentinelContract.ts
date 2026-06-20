@@ -4,6 +4,9 @@ import crypto from "crypto";
 
 let clientPromise: Promise<any> | null = null;
 let contractAvailable = false;
+let lastFailureTime = 0;
+let contractDownLogged = false;
+const RETRY_INTERVAL_MS = 60_000;
 
 function hasRequiredEnv(): boolean {
   return !!(
@@ -43,6 +46,8 @@ async function getTenantClient() {
 export async function resetClient() {
   clientPromise = null;
   contractAvailable = false;
+  lastFailureTime = 0;
+  contractDownLogged = false;
 }
 
 function canonicalizeForSigning(input: Record<string, unknown>): string {
@@ -67,9 +72,18 @@ export async function callContract<T = unknown>(
     return { ok: false, error: "T3N env vars not configured" };
   }
 
+  // Circuit breaker: if contract recently failed, skip retry
+  const now = Date.now();
+  if (!contractAvailable && lastFailureTime > 0 && now - lastFailureTime < RETRY_INTERVAL_MS) {
+    return { ok: false, error: "contract unavailable (circuit breaker)" };
+  }
+
   try {
     const tc = await getTenantClient();
-    if (!tc) return { ok: false, error: "T3N client unavailable" };
+    if (!tc) {
+      markContractDown();
+      return { ok: false, error: "T3N client unavailable" };
+    }
 
     const contractTail = process.env.CONTRACT_TAIL!;
     const contractVersion = process.env.CONTRACT_VERSION!;
@@ -78,10 +92,35 @@ export async function callContract<T = unknown>(
       functionName,
       input,
     });
+
+    // Success — mark available
+    if (!contractAvailable) {
+      contractAvailable = true;
+      contractDownLogged = false;
+      console.log("[Contract] TEE contract is now reachable — switching to contract-backed mode.");
+    }
+
     return { ok: true, data: result as T };
   } catch (err: any) {
+    markContractDown();
     const msg = err?.message || String(err);
     return { ok: false, error: msg };
+  }
+}
+
+function markContractDown() {
+  contractAvailable = false;
+  if (lastFailureTime === 0) {
+    lastFailureTime = Date.now();
+  } else {
+    const now = Date.now();
+    if (now - lastFailureTime > RETRY_INTERVAL_MS) {
+      lastFailureTime = now; // allow next retry window
+    }
+  }
+  if (!contractDownLogged) {
+    contractDownLogged = true;
+    console.log("[Contract] TEE contract unreachable — switched to local storage. Will retry every 60s.");
   }
 }
 

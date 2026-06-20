@@ -71,3 +71,25 @@ Unresolved. Requires investigation by the T3N team. Contact [t.me/terminal3devel
 | `aa97bafa-0a28-4dcb-8f8c-a84f7cbca2f5` | Sentinel v1.0.5 via `T3nClient.executeAndDecode` |
 | `4adc5d05-2772-4169-95b1-9d61445102d5` | Minimal contract with host imports |
 | `6fff6aa3-6625-4f4d-b34c-c92da7055071` | Minimal contract with zero imports |
+
+---
+
+## 2. Missing agent-registration primitive in ADK contract scaffolding
+
+The standard T3 ADK contract template/pattern has no `register-agent` export. New developers following the examples will inevitably write agent registration data to a disconnected KV template contract (via `contracts.execute()` with `kv-set`) rather than into their contract's own internal `kv_store` namespace. The documentation assumes the developer knows to bridge these two patterns, but provides no guidance on how or why.
+
+### Status
+Confirmed. Requires documentation improvement or a scaffolding change.
+
+---
+
+## 3. Documentation ambiguity: `contracts.execute()` KV contracts vs. component-internal `kv-store`
+
+The SDK documentation does not clearly distinguish between:
+1. A KV-template contract deployed separately and addressed via `tenant.contracts.execute("some-tail-kv", { functionName: "kv-set", input })`.
+2. The `host:interfaces/kv-store` namespace available inside a component's own WASM execution (accessed via `kv_store::set()` in Rust).
+
+These are two completely different storage paths with different key namespaces, map naming conventions, and access patterns. The documentation presents them without explaining the distinction, which leads to the "silent write to wrong namespace" bug pattern.
+
+### Status
+Confirmed. Requires documentation clarification.

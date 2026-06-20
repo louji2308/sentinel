@@ -86,6 +86,10 @@ SENTINEL uses [Cedar](https://www.cedarpolicy.com/) as its policy language — a
 
 ### Setup
 
+> **Note:** The T3N testnet currently returns HTTP 500 on all WASM contract execution ([`BUGS.md`](./BUGS.md#1)).  
+> The oracle runs in **local fallback mode** with identical functionality — the dashboard, demo agents, and all APIs work immediately.  
+> When the testnet issue is resolved, deploy the contract for persistent, TEE-backed storage.
+
 ```bash
 # 1. Clone and install dependencies
 git clone <repo-url> && cd sentinel
@@ -95,22 +99,23 @@ npm install
 cp .env.example .env
 # Edit .env — set T3N_API_KEY with your key from terminal3.io/claim-page
 
-# 3. Run setup — registers tenant DID, creates KV maps
-npm run setup
+# 3. Start the oracle (uses local storage if contract is unreachable)
+npm run oracle        # Oracle on :3001
+# In another terminal:
+npm run dashboard     # Dashboard on :3000
 
-# 4. Build and deploy the TEE contract
+# 4. Run the demo agents
+npm run demo          # Run all 4 agent scenarios
+
+# 5. (Optional) Build and deploy the TEE contract
 npm run build:contract
 npm run deploy:contract
 npm run seed:policies
-
-# 5. Start everything
-npm run dev          # Oracle on :3001, Dashboard on :3000
-npm run demo         # Run the 3-agent demo
 ```
 
 ### Demo Script
 
-The demo runs three agent scenarios with autonomous behavior:
+The demo runs four agent scenarios with autonomous behavior:
 
 ```
 ╔══════════════════════════════════════════╗
@@ -133,6 +138,11 @@ The demo runs three agent scenarios with autonomous behavior:
   Rogue Agent:
     ❌ Book flight → DENY (wrong credential type)
     ❌ Payment $100,000 → DENY → 🔄 All retries exhausted
+
+  Expense Agent (delegation demo):
+    ✅ Submit expense $200 → PERMIT (delegated from Travel Agent)
+    ⚠️  Submit expense $4,500 → ESCALATE (near cap)
+    ❌ Submit expense $8,000 → DENY (over cap, wrong domain)
 ```
 
 ---
@@ -141,7 +151,7 @@ The demo runs three agent scenarios with autonomous behavior:
 
 ### Compliance Oracle API
 
-Every API call forwards to the TEE contract — no local policy simulation, no in-memory state.
+Every API call attempts the TEE contract first. If the contract is unreachable (see [Known Issues](#known-issues)), the oracle transparently falls back to local in-memory storage and the TypeScript Cedar engine — identical behavior, same API responses, no configuration change needed. A circuit breaker prevents burning rate limit on repeated attempts; the system retries every 60 seconds and switches to contract mode automatically when the TEE becomes available.
 
 | Endpoint | Description | Contract function |
 |----------|-------------|-------------------|
@@ -177,7 +187,7 @@ Every API call forwards to the TEE contract — no local policy simulation, no i
 
 ### Autonomous Agent Behavior
 
-All three demo agents demonstrate real autonomous decision-making without any AI/LLM:
+All four demo agents demonstrate real autonomous decision-making without any AI/LLM:
 
 1. **Feedback-driven retry**: When an action is DENIED (e.g., spend cap exceeded), the agent autonomously computes and resubmits reduced-scope versions (50%, 25%, 10% of original amount) — a deterministic renegotiation loop driven entirely by oracle feedback.
 2. **Escalation polling**: When an action is ESCALATED, the agent can poll for the resolution and only proceed once a human operator has approved it.
@@ -190,6 +200,8 @@ All three demo agents demonstrate real autonomous decision-making without any AI
 This section is written for security engineers and compliance officers evaluating SENTINEL. It separates exactly what is cryptographically provable from what remains operationally trusted.
 
 ### Cryptographically Provable (verified without trusting the oracle)
+
+> **Note:** The items below describe the system's design when the TEE contract is executing on the T3N ledger. Due to a current T3N testnet issue ([`BUGS.md`](./BUGS.md#1)), the contract cannot execute at this time. The oracle server falls back to local in-memory storage — functionally identical, but without cryptographic sealing. All contract code is implemented and compiled; unblocking execution requires only a T3N-side fix.
 
 1. **Every compliance decision is recorded in a TEE-signed receipt.** The receipt is signed inside the WASM contract via `signing::sign` (the T3N host interface), not by the oracle server. The signature proves the receipt was produced by the contract code running inside the TEE.
 
@@ -265,42 +277,49 @@ console.log(JSON.stringify(result, null, 2));
 
 ## Bug Bounty
 
-Bug reports filed during development:
-- [Missing agent-registration primitive in ADK contract scaffolding] — the standard contract pattern has no `register-agent` export, forcing developers to either use a disconnected KV template contract or build their own registration path
-- [Documentation ambiguity between `contracts.execute()`-addressed KV contracts and a component's internal `host:interfaces/kv-store` namespace] — the two patterns are not clearly distinguished in SDK docs, leading to the seed-script disconnect where data is written to one namespace but read from another
+See [`BUGS.md`](./BUGS.md) for the full list of filed bug reports.
+
+| # | Report | Status |
+|---|--------|--------|
+| 1 | T3N testnet returns HTTP 500 on all contract execution — blocks WASM instantiation across all contract variants | Open — requires T3N team investigation ([`BUGS.md`](./BUGS.md#1-contract-execution-fails-with-http-500-internal-error-on-t3n-testnet)) |
+| 2 | Missing agent-registration primitive in ADK contract scaffolding — the standard contract pattern has no `register-agent` export, forcing developers to either use a disconnected KV template contract or build their own registration path | Confirmed |
+| 3 | Documentation ambiguity between `contracts.execute()`-addressed KV contracts and a component's internal `host:interfaces/kv-store` namespace — the two patterns are not clearly distinguished in SDK docs, leading to the seed-script disconnect where data is written to one namespace but read from another | Confirmed |
+
+---
+
+## Known Issues
+
+### T3N testnet contract execution is currently blocked
+
+The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract execution attempt. This has been reproduced across multiple contract variants (full Sentinel contract, minimal ping contract with zero imports, multiple SDK versions). See [`BUGS.md`](./BUGS.md#1-contract-execution-fails-with-http-500-internal-error-on-t3n-testnet) for full reproduction steps and request IDs.
+
+**Impact on this submission:** The TEE contract exports (`evaluate-compliance`, `register-agent`, `revoke-agent`, `verify-receipt`, etc.) are fully implemented in Rust/WASM and compile cleanly to `wasm32-wasip2`, but cannot execute on the T3N testnet due to this infrastructure issue. The oracle server includes a transparent local fallback that provides identical functionality using in-memory storage and the TypeScript Cedar engine. When the testnet issue is resolved, the system switches to contract-backed persistent storage automatically.
 
 ---
 
 ## Submission Checklist
 
-- [x] `T3nClient` authenticated with real T3N testnet
-- [x] Tenant DID registered
-- [x] 3 demo agents with distinct credential types
-- [x] TEE WASM contract compiled for wasm32-wasip2
-- [x] KV store for agent registry, policies, audit log, receipts, revocations, spend ledger
-- [x] `register-agent` contract export (signed)
-- [x] `seed-policy` contract export (signed)
-- [x] `revoke-agent` contract export (signed, with operator auth)
-- [x] `resolve-escalation` contract export (signed)
-- [x] `verify-receipt` contract export (checks revocation status, expiry)
-- [x] `query-audit-log` contract export (SSE stream + export)
-- [x] Real SHA-256 hashing (not `DefaultHasher`)
-- [x] Cumulative velocity-based spend tracking
-- [x] Oracle server calls real deployed contract (not local simulation)
-- [x] Agent state persisted on T3N ledger (survives restart)
-- [x] Autonomous agent behaviors (feedback-driven retry, escalation polling)
-- [x] Escalation lifecycle: generate → store → resolve → audit
-- [x] Admin operations require cryptographically signed requests
-- [x] Standalone third-party receipt verifier (no oracle trust)
-- [x] Policy what-if simulator (dry-run tool)
-- [x] GitHub Actions CI (Rust build + lint + test)
-- [x] All demo acts run without error
-- [x] Dashboard shows live updates in real time
-- [x] Revoke button works and reflects immediately
-- [x] Compliance Receipt verifiable via dashboard
-- [x] Export (JSON) works with all audit entries
-- [x] Honest "Verified Claims vs. Operational Trust" documentation
-- [ ] Demo video recorded
+| Item | Status | Notes |
+|------|--------|-------|
+| `T3nClient` authenticated with real T3N testnet | ✅ | Works — client handshake + auth succeed |
+| Tenant DID registered | ✅ | `npm run setup` succeeds |
+| 4 demo agents with distinct credential types | ✅ | Travel, HR/Payroll, Rogue + Expense delegation |
+| WASM contract compiles for `wasm32-wasip2` | ✅ | `cargo build --release` passes cleanly |
+| Contract exports (7 functions) | ✅ | Fully implemented in Rust — see `compliance.rs`, `receipt.rs`, `audit.rs` |
+| Real SHA-256 (not `DefaultHasher`) | ✅ | `sha2` crate, proper digest |
+| Cumulative velocity-based spend tracking | ✅ | Per-day KV namespace, checked in `evaluate_rules()` |
+| Escalation lifecycle (create → store → resolve → audit) | ✅ | `resolve-escalation` export, dashboard Admin API, agent polling |
+| Admin operations signed authorization | ✅ | HMAC-SHA256 signing + `signing::verify` pattern |
+| Standalone receipt verifier | ✅ | `scripts/verify-receipt-standalone.ts` |
+| Policy what-if simulator | ✅ | `packages/policy-engine/src/simulator.ts` |
+| GitHub Actions CI | ✅ | `.github/workflows/ci.yml` |
+| Agent autonomous behavior (retry, escalation polling) | ✅ | `agentBase.ts` — `retryWithReducedScope`, `pollEscalation` |
+| Dashboard shows live data | ✅ | Agents, verdicts, receipt verification, export |
+| Honest trust-boundary documentation | ✅ | "Verified Claims vs. Operational Trust" section |
+| **Contract execution on T3N testnet** | ⛔ **Blocked** | See [`BUGS.md`](./BUGS.md#1) — T3N testnet returns HTTP 500 on all WASM execution |
+| **Agent state persisted on T3N ledger** | ⛔ **Blocked** | Requires contract execution (same testnet issue) |
+| **Oracle calls real deployed contract** | ⛔ **Blocked** | Falls back to local engine + in-memory store transparently |
+| Demo video recorded | ❌ | Not yet recorded |
 
 ---
 
