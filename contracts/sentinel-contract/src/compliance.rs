@@ -313,15 +313,26 @@ fn evaluate_rules(agent: &AgentRecord, action: &ActionInput, timestamp_ms: u64) 
 
     let scope_cap = extract_spend_cap(&agent.scope);
     if let Some(amount) = action.amount {
-        if scope_cap != u64::MAX {
-            let cumulative = cumulative_spend_for_period(&agent.did, timestamp_ms);
-            let total_if_permitted = cumulative + amount as u64;
+        if scope_cap != u64::MAX && scope_cap > 0 {
+            let daily = cumulative_spend_for_period(&agent.did, timestamp_ms);
+            let hourly = cumulative_spend_for_window(&agent.did, timestamp_ms, 3600, "hourly");
+            let total_daily = daily + amount as u64;
+            let total_hourly = hourly + amount as u64;
+            let hourly_cap = scope_cap / 10;
 
-            if total_if_permitted > scope_cap {
-                if total_if_permitted > (scope_cap * 8 / 10) {
+            if total_daily > scope_cap {
+                if total_daily <= scope_cap * 12 / 10 {
                     return Decision::Escalate;
                 }
                 return Decision::Deny;
+            }
+
+            if total_daily >= scope_cap * 8 / 10 {
+                return Decision::Escalate;
+            }
+
+            if hourly_cap > 0 && total_hourly > hourly_cap {
+                return Decision::Escalate;
             }
         }
     }
@@ -335,11 +346,14 @@ fn evaluate_rules(agent: &AgentRecord, action: &ActionInput, timestamp_ms: u64) 
     Decision::Permit
 }
 
-fn cumulative_spend_for_period(did: &str, timestamp_ms: u64) -> u64 {
-    let day_key = timestamp_ms / 86_400_000;
-    let ledger_map = kv_name(SPEND_LEDGER_SUFFIX);
-    let ledger_key = format!("{}:{}", did, day_key);
+fn bucket_key(did: &str, timestamp_ms: u64, window_seconds: u64, suffix: &str) -> String {
+    let bucket = timestamp_ms / 1000 / window_seconds;
+    format!("{}:{}:{}", did, bucket, suffix)
+}
 
+fn cumulative_spend_for_window(did: &str, timestamp_ms: u64, window_seconds: u64, suffix: &str) -> u64 {
+    let ledger_map = kv_name(SPEND_LEDGER_SUFFIX);
+    let ledger_key = bucket_key(did, timestamp_ms, window_seconds, suffix);
     match kv_store::get(&ledger_map, ledger_key.as_bytes()) {
         Ok(Some(raw)) => {
             let s = String::from_utf8(raw).unwrap_or_default();
@@ -349,15 +363,23 @@ fn cumulative_spend_for_period(did: &str, timestamp_ms: u64) -> u64 {
     }
 }
 
-fn record_spend(did: &str, amount: u64, timestamp_ms: u64) {
-    let day_key = timestamp_ms / 86_400_000;
-    let ledger_map = kv_name(SPEND_LEDGER_SUFFIX);
-    let ledger_key = format!("{}:{}", did, day_key);
+fn cumulative_spend_for_period(did: &str, timestamp_ms: u64) -> u64 {
+    cumulative_spend_for_window(did, timestamp_ms, 86400, "daily")
+}
 
-    let current = cumulative_spend_for_period(did, timestamp_ms);
-    let new_total = current + amount;
-    kv_store::set(&ledger_map, ledger_key.as_bytes(), new_total.to_string().as_bytes())
-        .ok();
+fn record_spend(did: &str, amount: u64, timestamp_ms: u64) {
+    let ledger_map = kv_name(SPEND_LEDGER_SUFFIX);
+    let windows: [(u64, &str); 3] = [
+        (3600, "hourly"),
+        (86400, "daily"),
+        (604800, "weekly"),
+    ];
+    for &(win_sec, win_sfx) in windows.iter() {
+        let key = bucket_key(did, timestamp_ms, win_sec, win_sfx);
+        let current = cumulative_spend_for_window(did, timestamp_ms, win_sec, win_sfx);
+        let new_total = current + amount;
+        kv_store::set(&ledger_map, key.as_bytes(), new_total.to_string().as_bytes()).ok();
+    }
 }
 
 fn extract_spend_cap(scope: &[String]) -> u64 {
