@@ -1,28 +1,32 @@
+import { insertAuditEntry, getAuditLog, findAuditEntry } from "./db.js";
 import type { AuditLogEntry } from "@sentinel/t3-client";
 
-const auditLog: AuditLogEntry[] = [];
-
-const MAX_CACHE_SIZE = 500;
-
 export function appendEntry(entry: AuditLogEntry): void {
-  auditLog.push(entry);
-  if (auditLog.length > MAX_CACHE_SIZE) {
-    auditLog.splice(0, auditLog.length - MAX_CACHE_SIZE);
-  }
+  insertAuditEntry({
+    id: entry.id,
+    timestamp: entry.timestamp,
+    agentDid: entry.agentDid,
+    decision: entry.decision,
+    policyClause: entry.policyClause,
+    action: entry.action,
+    receiptId: entry.receiptId,
+    operatorAction: entry.operatorAction,
+  });
 }
 
 export function getLog(): AuditLogEntry[] {
-  return auditLog;
+  return getAuditLog(0, 500) as unknown as AuditLogEntry[];
 }
 
 export function getLogSince(timestamp: number): AuditLogEntry[] {
-  return auditLog.filter((e) => e.timestamp >= timestamp);
+  return getAuditLog(timestamp, 200) as unknown as AuditLogEntry[];
 }
 
 export function findEntry(receiptId: string): AuditLogEntry | undefined {
-  return auditLog.find((e) => e.receiptId === receiptId);
+  const entry = findAuditEntry(receiptId);
+  return entry as AuditLogEntry | undefined;
 }
 
 export function clearCache(): void {
-  auditLog.length = 0;
+  // No-op — SQLite persists intentionally
 }

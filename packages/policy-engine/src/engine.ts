@@ -95,6 +95,9 @@ export interface PolicyContext {
   dayOfWeek: string;
   currentTimestamp: number;
   requestId: string;
+  spendDaily?: number;
+  spendHourly?: number;
+  spendCap?: number;
 }
 
 export interface PolicyPrincipal {
@@ -182,19 +185,45 @@ export async function evaluatePolicy(
     };
   }
 
-  if (
-    decision === "PERMIT" &&
-    resource.amount !== undefined &&
-    principal.spendCap < Infinity &&
-    resource.amount >= principal.spendCap * 0.8 &&
-    resource.amount <= principal.spendCap
-  ) {
-    return {
-      decision: "ESCALATE",
-      matchedPolicyId,
-      reason: `Amount ${resource.amount} is within 20% of spend cap ${principal.spendCap}. Human review required.`,
-      policyHash,
-    };
+  if (decision === "PERMIT" && resource.amount !== undefined && principal.spendCap < Infinity) {
+    const dailyTotal = (context.spendDaily ?? 0) + resource.amount;
+    const hourlyTotal = (context.spendHourly ?? 0) + resource.amount;
+    const hourlyCap = Math.floor((context.spendCap ?? principal.spendCap) / 10);
+
+    if (dailyTotal > principal.spendCap) {
+      if (dailyTotal <= principal.spendCap * 1.2) {
+        return {
+          decision: "ESCALATE",
+          matchedPolicyId,
+          reason: `Daily spend $${dailyTotal} exceeds cap $${principal.spendCap}. Escalating.`,
+          policyHash,
+        };
+      }
+      return {
+        decision: "DENY",
+        matchedPolicyId,
+        reason: `Daily spend $${dailyTotal} exceeds hard cap $${principal.spendCap}. Denied.`,
+        policyHash,
+      };
+    }
+
+    if (hourlyCap > 0 && hourlyTotal > hourlyCap) {
+      return {
+        decision: "ESCALATE",
+        matchedPolicyId,
+        reason: `Hourly burst $${hourlyTotal} exceeds ${hourlyCap}. Escalating.`,
+        policyHash,
+      };
+    }
+
+    if (dailyTotal >= principal.spendCap * 0.8) {
+      return {
+        decision: "ESCALATE",
+        matchedPolicyId,
+        reason: `Daily spend $${dailyTotal} is within 20% of cap $${principal.spendCap}. Escalating.`,
+        policyHash,
+      };
+    }
   }
 
   return {

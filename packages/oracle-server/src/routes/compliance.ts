@@ -4,6 +4,7 @@ import { callContract } from "../services/sentinelContract.js";
 import { evaluatePolicy } from "@sentinel/policy-engine";
 import { getAgent } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
+import { getCumulativeSpend, recordSpend, insertEscalation } from "../services/db.js";
 
 const router = Router();
 
@@ -68,12 +69,19 @@ router.post("/check", async (req, res) => {
       amount: proposedAction.amount,
     };
 
-    const now = new Date();
+    const now = Date.now();
+    const spendCap = principal.spendCap;
+    const spendHourly = getCumulativeSpend(agentDid, now, "hourly");
+    const spendDaily = getCumulativeSpend(agentDid, now, "daily");
+
     const context = {
-      hourOfDay: now.getUTCHours(),
-      dayOfWeek: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][now.getUTCDay()],
-      currentTimestamp: Math.floor(now.getTime() / 1000),
+      hourOfDay: new Date(now).getUTCHours(),
+      dayOfWeek: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][new Date(now).getUTCDay()],
+      currentTimestamp: Math.floor(now / 1000),
       requestId,
+      spendDaily,
+      spendHourly,
+      spendCap,
     };
 
     const policyResult = await evaluatePolicy(principal, proposedAction.type, resource, context);
@@ -91,6 +99,23 @@ router.post("/check", async (req, res) => {
       signature: `sig-${crypto.createHash("sha256").update(receiptId + policyResult.policyHash).digest("hex")}`,
       action: proposedAction,
     };
+
+    if (policyResult.decision === "PERMIT" && proposedAction.amount) {
+      recordSpend(agentDid, proposedAction.amount, now, "daily");
+      recordSpend(agentDid, proposedAction.amount, now, "hourly");
+      recordSpend(agentDid, proposedAction.amount, now, "weekly");
+    }
+
+    if (policyResult.decision === "ESCALATE") {
+      insertEscalation({
+        escalationId: `ESC-${requestId.slice(0, 8)}`,
+        agentDid,
+        requestId,
+        action: proposedAction,
+        amount: proposedAction.amount || 0,
+        reason: policyResult.reason,
+      });
+    }
 
     appendEntry({
       id: `log-${crypto.randomBytes(4).toString("hex")}`,
