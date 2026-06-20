@@ -319,13 +319,21 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 | **Contract execution on T3N testnet** | ⛔ **Blocked** | See [`BUGS.md`](./BUGS.md#1) — T3N testnet returns HTTP 500 on all WASM execution |
 | **Agent state persisted on T3N ledger** | ⛔ **Blocked** | Requires contract execution (same testnet issue) |
 | **Oracle calls real deployed contract** | ⛔ **Blocked** | Falls back to local engine + in-memory store transparently |
+| WIT host interfaces downgraded to @1.0.0 (Bug #1 Fix #1) | ✅ | Compiles cleanly for wasm32-wasip2 |
+| SQLite persistent local storage | 🟡 | better-sqlite3 installed, schema defined |
+| Sliding-window spend velocity (hourly + weekly) | 🟡 | Rust + TS implementation in progress |
+| Webhook escalation notifications | 🟡 | Implementation in progress |
+| Direct agent receipt verification + ReceiptWallet | 🟡 | Implementation in progress |
+| Dashboard v3.0 (velocity chart, escalations) | 🟡 | Components in progress |
+| Multi-sig governance MVP | 🟡 | Implementation in progress |
+| Diagnostic contract for T3N debugging | 🟡 | Bug #1 Fix #2 in progress |
 | Demo video recorded | ❌ | Not yet recorded |
 
 ---
 
 ## Roadmap
 
-### Implemented
+### v1.0 (Hackathon baseline)
 - TEE contract with 7 exported functions
 - Real SHA-256, real TEE signing, real KV-backed state
 - Signed admin authorization for all state-mutating operations
@@ -336,12 +344,20 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 - Policy what-if simulator
 - GitHub Actions CI pipeline
 
+### v3.0 In Progress
+- ✅ Bug #1 Fix #1 — WIT host interface versions downgraded from `@2.1.0` to `@1.0.0` for T3N compatibility (compiles)
+- 🟡 SQLite persistent storage — replaces in-memory Maps (better-sqlite3 installed)
+- 🟡 Sliding-window spend velocity — hourly + daily + weekly buckets (Rust + TS)
+- 🟡 Webhook escalation notifications — Slack + generic webhook support
+- 🟡 Direct agent-to-contract receipt verification + ReceiptWallet agent SDK
+- 🟡 Dashboard v3.0 — SpendVelocityChart, EscalationsPanel
+- 🟡 Multi-sig governance MVP — M-of-N operator approval for admin ops
+- 🟡 Bug #1 Fix #2 — Diagnostic minimal contract for T3N binary search
+- 🟡 CI/CD hardening — security audit, integration tests, Cedar policy validation
+- 🟡 Bug #2 & #3 documentation — ADK patterns guide
+
 ### Future (post-hackathon)
-- Cedar-in-Rust port: replace the hand-rolled `evaluate_rules()` engine with the real `cedar-policy` Rust crate inside the WASM contract
 - P2P agent-to-contract compliance checks (remove oracle server from the critical path)
-- Threshold-signature admin governance (M-of-N operator approval for revocations)
-- Webhook notifications for escalation events
-- Sliding-window spend velocity (per-hour, per-week) beyond daily cumulative
 - Automated policy soundness checking via Cedar validator in CI
 
 ---

@@ -2,10 +2,10 @@ package z:sentinel-compliance@1.0.0;
 
 world sentinel-compliance {
   import host:tenant/tenant-context@1.0.0;
-  import host:interfaces/logging@2.1.0;
-  import host:interfaces/kv-store@2.1.0;
-  import host:interfaces/signing@2.1.0;
-  import host:interfaces/time@2.1.0;
+  import host:interfaces/logging@1.0.0;
+  import host:interfaces/kv-store@1.0.0;
+  import host:interfaces/signing@1.0.0;
+  import host:interfaces/time@1.0.0;
 
   export contracts;
 }

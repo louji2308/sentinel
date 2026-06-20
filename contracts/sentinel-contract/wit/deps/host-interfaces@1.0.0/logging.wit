@@ -1,4 +1,4 @@
-package host:interfaces@2.1.0;
+package host:interfaces@1.0.0;
 
 interface logging {
   info: func(msg: string);

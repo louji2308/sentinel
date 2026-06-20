@@ -1,4 +1,4 @@
-package host:interfaces@2.1.0;
+package host:interfaces@1.0.0;
 
 interface signing {
   sign: func(data: list<u8>) -> result<list<u8>, string>;
