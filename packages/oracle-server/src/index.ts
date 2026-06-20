@@ -218,7 +218,7 @@ async function start() {
     logger.warn({ err }, "Contract seeding skipped (non-fatal)");
   }
 
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     logger.info({ port: PORT, mode: process.env.T3N_API_KEY ? "hybrid" : "local" }, "Oracle server started");
   });
 

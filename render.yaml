@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: sentinel-oracle
+    runtime: node
+    repo: https://github.com/louji2308/sentinel
+    branch: master
+    buildCommand: npm install
+    startCommand: npx tsx packages/oracle-server/src/index.ts
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: ORACLE_PORT
+        value: "3001"
+      - key: CORS_ORIGIN
+        value: https://sentinel-dashboard.vercel.app
+      - key: SENTINEL_DB_DIR
+        value: /data
+    disk:
+      name: sentinel-data
+      mountPath: /data
+      sizeGB: 1
