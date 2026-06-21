@@ -294,7 +294,7 @@ console.log(JSON.stringify(result, null, 2));
 
 See [`BUGS.md`](./BUGS.md) for the full list of filed bug reports.
 
-### SDK Bug Reports (submitted to bug bounty)
+### SDK Bug Reports
 
 | # | Report | Status |
 |---|--------|--------|
@@ -303,27 +303,6 @@ See [`BUGS.md`](./BUGS.md) for the full list of filed bug reports.
 | 3 | **KV namespace documentation ambiguity** — `contracts.execute()`-addressed KV contracts vs. component-internal `kv-store` not clearly distinguished | **Confirmed** — documentation gap |
 | 4 | **`T3nClient.handshake()` has no built-in timeout** — can hang indefinitely on unreachable node, requiring hand-rolled `Promise.race` wrapper in every integration | **Open** — SDK behavior gap |
 | 5 | **`client.authenticate()` return type is opaque** — returns `Uint8Array`, `.value`, `.did.value`, or raw string with no typed discriminator | **Open** — typing/documentation gap |
-
-### Internal Bugs Found & Fixed (engineering rigor — not SDK issues)
-
-| # | Bug | Fixed |
-|---|-----|-------|
-| 6 | `spend_ledger` table missing `timestamp` column — no ordering possible on velocity queries | ✅ |
-| 7 | `audit-velocity.ts` references wrong column names (`bucket`, `agent_did` instead of `window_type`, `did`) | ✅ |
-| 8 | `compliance.rs` `record_spend()` never called from `evaluate()` — cumulative velocity was a no-op | ✅ |
-| 9 | `Decision` enum serializes as PascalCase but TS expects `UPPER_CASE` | ✅ |
-| 10 | Local fallback `spendCap` hardcoded instead of parsed from agent scope | ✅ |
-| 11 | `admin.ts` escalation APPROVE doesn't call `recordSpend()` in local fallback | ✅ |
-| 12 | `pollEscalation()` incorrectly assumes missing escalation = approved | ✅ |
-| 13 | `governance.ts` doesn't fire webhooks on escalation resolution | ✅ |
-| 14 | Circuit breaker cached failed promise permanently — never recovers | ✅ |
-| 15 | `dry-run` script uses `require()` in ESM context | ✅ |
-| 16 | No Zod validation on any API route | ✅ |
-| 17 | No graceful shutdown handler | ✅ |
-| 18 | No `tsconfig.json` for oracle-server | ✅ |
-| 19 | Diagnostic contract uses same WIT namespace as sentinel contract | ✅ |
-| 20 | Governance vote deduplicated by `agentDid` alone, not `agentDid + proposalId` | ✅ |
-| 21 | Admin audit entries use verdicts not in `VerdictDecision` type union | ✅ |
 
 ---
 
@@ -423,7 +402,7 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 | Receipt persistence in local fallback mode | ✅ | upsertReceipt called after every local-mode verdict |
 | SQLite WAL checkpoint optimization | ✅ | periodicCleanup() runs every 60s |
 | TypeScript clean compile (oracle-server) | ✅ | Zero errors with strict mode |
-| 16 internal bugs found + fixed | ✅ | See BUGS.md — audit velocity, record_spend, circuit breaker, ESM, etc. |
+| 5 SDK bugs documented | ✅ | See BUGS.md — contract execution, agent registration, KV docs, handshake timeout, auth return type |
 | Structured logging (pino) | ✅ | Replaces console.log across all routes |
 | Centralized error handler | ✅ | errorHandler middleware + custom AppError classes |
 | Rate limiting on admin/governance | ✅ | 30 req/min admin, 20 req/min governance |
@@ -466,7 +445,7 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 - ✅ Receipt persistence in local fallback — receipts stored in SQLite `receipts` table for later verification
 - ✅ SQLite WAL checkpoint optimization — periodic `wal_checkpoint(PASSIVE)` prevents WAL file bloat
 - ✅ Cache cleanup — stale request cache entries evicted after 24h TTL
-- ✅ 16 deep bugs fixed — audit velocity columns, Rust record_spend, Decision caching, circuit breaker blackout, ESM dry-run, governance dedup, Zod validation, graceful shutdown, WIT namespace conflict, and more (see [`BUGS.md`](./BUGS.md))
+- ✅ 5 SDK bugs documented — contract execution, agent registration, KV docs, handshake timeout, auth return type (see [`BUGS.md`](./BUGS.md))
 - ✅ TypeScript strict mode compatibility — oracle-server compiles with zero errors
 
 ### v4.0 (Phase 4 — Production Hardening)
