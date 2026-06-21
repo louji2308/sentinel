@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/index.ts",
   "dependencies": {
-    "@cedar-policy/cedar-wasm": "latest"
+    "@cedar-policy/cedar-wasm": "4.11.1"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

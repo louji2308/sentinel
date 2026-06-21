@@ -100,6 +100,7 @@ Unresolved. Requires investigation by the T3N team.
 | `aa97bafa-0a28-4dcb-8f8c-a84f7cbca2f5` | Sentinel v1.0.5 via `T3nClient.executeAndDecode` |
 | `4adc5d05-2772-4169-95b1-9d61445102d5` | Minimal contract with host imports |
 | `6fff6aa3-6625-4f4d-b34c-c92da7055071` | Minimal contract with zero imports |
+| `909c94f2-9a6b-4ce3-90bf-3805ad715bb1` | Re-test v1.0.5 (2026-06-21) — still reproduces |
 
 ---
 
