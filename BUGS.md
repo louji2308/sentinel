@@ -57,7 +57,11 @@ The error has been reproduced with:
 All paths converge to the same `HTTP 500: Internal error`.
 
 ### Root cause (suspected)
-Server-side crash during WASM component instantiation. The WASM binary uses Component Model encoding (version `0x0001000d`), and the T3N runtime may not support this encoding version or may have a bug in its WASM loader. The error is not listed in the [T3N common errors](https://docs.terminal3.io/developers/adk/tips/common-errors) documentation.
+Server-side crash during WASM instantiation. The error is not encoding-specific — it reproduces identically across both:
+- **wasm32-wasip2** (Component Model, 322 KB binary)
+- **wasm32-wasip1** (core wasm module, 295 KB binary)
+
+Both fail with the same opaque `HTTP 500: Internal error` at instantiation time, before any contract function runs. This points to a general WASM runtime crash on the T3N testnet node rather than a Component Model compatibility issue. The error is not listed in the [T3N common errors](https://docs.terminal3.io/developers/adk/tips/common-errors) documentation.
 
 ### Impact
 Blocking — the contract cannot execute any function, making the compliance pipeline non-functional on T3N testnet. `seed:policies`, `register-agent`, and all compliance evaluations all depend on contract execution.
@@ -71,7 +75,8 @@ Blocking — the contract cannot execute any function, making the compliance pip
 | Minimal contract with zero imports | Same error |
 | Non-existent function name (probes server vs loader) | Same error |
 | WIT interface versions downgraded to `@1.0.0` | Compiles, same error |
-| Component Model vs core module encoding | Binary is valid Component (`0x0001000d`) |
+| wasm32-wasip1 (core module, not Component Model) | Compiles (295 KB), same error — rules out Component Model theory |
+| wasm32-wasip2 (Component Model) | Binary is valid Component (`0x0001000d`), same error |
 
 ### Recommended next steps for T3N team
 
@@ -101,6 +106,7 @@ Unresolved. Requires investigation by the T3N team.
 | `4adc5d05-2772-4169-95b1-9d61445102d5` | Minimal contract with host imports |
 | `6fff6aa3-6625-4f4d-b34c-c92da7055071` | Minimal contract with zero imports |
 | `909c94f2-9a6b-4ce3-90bf-3805ad715bb1` | Re-test v1.0.5 (2026-06-21) — still reproduces |
+| `bb609e60-f451-4aef-baa7-c1975cda1ee8` | wasm32-wasip1 target v1.0.6 (2026-06-21) — also fails |
 
 ---
 
