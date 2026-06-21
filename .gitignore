@@ -12,3 +12,5 @@ data/
 *.db-shm
 .test-data/
 *.tsbuildinfo
+.vercel
+.env*.local

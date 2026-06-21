@@ -6,6 +6,8 @@
 
 **Deterministic, TEE-sealed policy enforcement for AI agents that spend money, touch data, and act on your behalf — with zero LLM calls anywhere near the decision.**
 
+**Built for the Terminal 3 Agent Dev Kit Bounty Challenge Hackathon.**
+
 [![Built for](https://img.shields.io/badge/built%20for-Terminal%203%20Agent%20Dev%20Kit-6E56CF)](https://www.terminal3.io/claim-page)
 [![Policy Engine](https://img.shields.io/badge/policy-Cedar-orange)](https://www.cedarpolicy.com/)
 [![Contract](https://img.shields.io/badge/contract-Rust%20%2F%20WASM%20(wasip2)-DEA584)](#tee-contract-functions)
