@@ -40,13 +40,6 @@ async function main() {
       issuedAt: now - 7 * day,
       expiresAt: now + 30 * day,
     },
-    {
-      agentDid: "did:t3n:rogue-agent-demo",
-      credentialType: "financial-trading",
-      credentialScope: ["spend:100", "domain:trading,crypto"],
-      issuedAt: now - 1 * day,
-      expiresAt: now + 1 * day,
-    },
   ];
 
   for (const agent of agents) {
@@ -100,18 +93,6 @@ forbid(
   resource is SentinelResource
 ) when {
   resource.domain == "external"
-};`,
-    },
-    {
-      agentType: "financial-trading",
-      policyText: `permit(
-  principal is SentinelAgent,
-  action in [SentinelAction::"book_flight", SentinelAction::"execute_payment"],
-  resource is SentinelResource
-) when {
-  principal.agentType == "financial-trading" &&
-  principal.credentialStatus == "active" &&
-  resource.domain in ["trading", "crypto"]
 };`,
     },
   ];

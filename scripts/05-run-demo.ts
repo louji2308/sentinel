@@ -1,7 +1,6 @@
 import "dotenv/config";
 import { runTravelAgent } from "../packages/agents/src/travelAgent.js";
 import { runHrPayrollAgent } from "../packages/agents/src/hrPayrollAgent.js";
-import { runRogueAgent } from "../packages/agents/src/rogueAgent.js";
 import { runExpenseAgent } from "../packages/agents/src/expenseAgent.js";
 
 async function main() {
@@ -19,11 +18,7 @@ async function main() {
   await runHrPayrollAgent();
   console.log("");
 
-  // Act 3 — Rogue Agent (all denied, retry exhausted)
-  await runRogueAgent();
-  console.log("");
-
-  // Act 4 — Expense Agent (delegated by Travel Agent, demonstrates agent-to-agent)
+  // Act 3 — Expense Agent (delegated by Travel Agent, demonstrates agent-to-agent)
   await runExpenseAgent();
 
   console.log("\n=== Demo Complete ===");

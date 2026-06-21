@@ -49,12 +49,6 @@ async function main() {
       decision: "APPROVE" as const,
       requiredVotes: 3,
     },
-    {
-      action: "emergency_pause",
-      targetId: "system:compliance:all",
-      decision: "DENY" as const,
-      requiredVotes: 2,
-    },
   ];
 
   for (const p of proposals) {

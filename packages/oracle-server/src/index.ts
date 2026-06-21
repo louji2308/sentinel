@@ -66,14 +66,6 @@ function seedLocalStores() {
       issuedAt: now - 7 * day,
       expiresAt: now + 30 * day,
     },
-    {
-      did: "did:t3n:rogue-agent-demo",
-      credentialScope: ["spend:100", "domain:trading,crypto"],
-      credentialStatus: "active" as const,
-      credentialType: "financial-trading",
-      issuedAt: now - 1 * day,
-      expiresAt: now + 1 * day,
-    },
   ];
 
   for (const agent of agents) {
@@ -99,12 +91,6 @@ function seedLocalStores() {
     action: { type: "execute_payment", resource: "FinanceSystem", amount: 50000 },
     receiptId: "RCP-demo-permit-2",
   });
-  appendEntry({
-    id: "log-demo-4", timestamp: baseTs + 90000, agentDid: "did:t3n:rogue-agent-demo",
-    decision: "DENY", policyClause: "forbid(principal=financial-trading, action=book_flight)",
-    action: { type: "book_flight", resource: "TravelSystem", amount: 5000 },
-    receiptId: "RCP-demo-deny-1",
-  });
 }
 
 async function trySeedContract() {
@@ -125,13 +111,6 @@ async function trySeedContract() {
       scope: ["spend:100000", "domain:payroll,benefits,hr,finance"],
       issuedAt: now - 7 * day,
       expiresAt: now + 30 * day,
-    },
-    {
-      agentDid: "did:t3n:rogue-agent-demo",
-      agentType: "financial-trading",
-      scope: ["spend:100", "domain:trading,crypto"],
-      issuedAt: now - 1 * day,
-      expiresAt: now + 1 * day,
     },
   ];
 
@@ -175,18 +154,6 @@ forbid(
   resource is SentinelResource
 ) when {
   resource.domain == "external"
-};`,
-    },
-    {
-      agentType: "financial-trading",
-      policyText: `permit(
-  principal is SentinelAgent,
-  action in [SentinelAction::"book_flight", SentinelAction::"execute_payment"],
-  resource is SentinelResource
-) when {
-  principal.agentType == "financial-trading" &&
-  principal.credentialStatus == "active" &&
-  resource.domain in ["trading", "crypto"]
 };`,
     },
   ];

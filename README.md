@@ -61,7 +61,7 @@ SENTINEL solves this with a compliance oracle that sits between agents and execu
 | `packages/oracle-server` | Express server — thin proxy that forwards agent requests to the TEE contract |
 | `packages/policy-engine` | Local Cedar engine — repurposed as a dashboard-facing dry-run simulator |
 | `packages/t3-client` | T3 ADK wrapper — authenticated client, DID management |
-| `packages/agents` | Multi-agent simulation — travel, HR, rogue demo agents with autonomous behavior |
+| `packages/agents` | Multi-agent simulation — travel, HR, expense demo agents with autonomous behavior |
 | `packages/dashboard` | Next.js regulator dashboard — live feed, audit explorer, agent management |
 | `scripts/` | Setup, deployment, seeding, and standalone receipt verification |
 
@@ -134,10 +134,6 @@ The demo runs four agent scenarios with autonomous behavior:
     ✅ Access HR records → PERMIT
     ❌ External payment $10,000 → DENY (domain mismatch)
     ⚠️  Near-cap payment $95,000 → ESCALATE → operator approves
-
-  Rogue Agent:
-    ❌ Book flight → DENY (wrong credential type)
-    ❌ Payment $100,000 → DENY → 🔄 All retries exhausted
 
   Expense Agent (delegation demo):
     ✅ Submit expense $200 → PERMIT (delegated from Travel Agent)
@@ -344,7 +340,7 @@ These are documented as SDK Bug Reports #4 and #5 in [`BUGS.md`](./BUGS.md).
 
 Unlike single-agent "call a tool" demos, SENTINEL implements a multi-agent compliance mesh:
 
-- **4 distinct agent personas** (Travel, HR/Payroll, Rogue, Expense) with independently scoped credentials and distinct policy domains
+- **3 distinct agent personas** (Travel, HR/Payroll, Expense) with independently scoped credentials and distinct policy domains
 - **Agent-to-agent delegation** (Travel → Expense) with independently scoped credentials
 - **Autonomous retry with reduced scope** — agents halve their request amount on DENY up to 3 retries
 - **Escalation polling** — agents wait for human operator approval before proceeding
@@ -372,7 +368,7 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 |------|--------|-------|
 | `T3nClient` authenticated with real T3N testnet | ✅ | Works — client handshake + auth succeed |
 | Tenant DID registered | ✅ | `npm run setup` succeeds |
-| 4 demo agents with distinct credential types | ✅ | Travel, HR/Payroll, Rogue + Expense delegation |
+| 3 demo agents with distinct credential types | ✅ | Travel, HR/Payroll, Expense delegation |
 | WASM contract compiles for `wasm32-wasip2` | ✅ | `cargo build --release` passes cleanly |
 | Contract exports (7 functions) | ✅ | Fully implemented in Rust — see `compliance.rs`, `receipt.rs`, `audit.rs` |
 | Real SHA-256 (not `DefaultHasher`) | ✅ | `sha2` crate, proper digest |
