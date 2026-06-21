@@ -43,16 +43,14 @@ HTTP 500: Internal error [<uuid>] ({"code":"internal_error","request_id":"<uuid>
 ```
 
 ### Evidence
-The error has been reproduced with:
-- The full Sentinel compliance contract (322 KB, with host imports)
-- A minimal `ping` contract (40 KB, with the same 5 host imports)
-- A minimal `ping` contract with **zero host imports** (40 KB, no `deps/`)
-- Multiple contract versions (`1.0.0` through `1.0.5`)
-- Multiple function names (including a non-existent name)
-- Both `TenantContractsNamespace.execute()` and raw `T3nClient.executeAndDecode()`
-- SDK versions `3.8.0` and `3.9.0`
-- `wit-bindgen` versions `0.49.0` and `0.35.0`
-- Clean rebuilds from scratch
+The error has been reproduced across **11 unique configurations**:
+- **6 contract variants**: full Sentinel (322 KB), Sentinel wasip1 (295 KB), minimal with imports (40 KB), minimal zero-import (40 KB), diagnostic, non-existent function name probe
+- **Target formats**: both `wasm32-wasip2` (Component Model) and `wasm32-wasip1` (core module) — both fail identically
+- **Contract versions**: `1.0.0` through `1.0.6` (contract_id 368 for v1.0.6)
+- **SDK versions**: `3.8.0` and `3.9.0`
+- **wit-bindgen versions**: `0.35.0` and `0.49.0`
+- **Execution methods**: `TenantContractsNamespace.execute()` and raw `T3nClient.executeAndDecode()`
+- **Clean rebuilds**: multiple from scratch
 
 All paths converge to the same `HTTP 500: Internal error`.
 
@@ -61,7 +59,7 @@ Server-side crash during WASM instantiation. The error is not encoding-specific 
 - **wasm32-wasip2** (Component Model, 322 KB binary)
 - **wasm32-wasip1** (core wasm module, 295 KB binary)
 
-Both fail with the same opaque `HTTP 500: Internal error` at instantiation time, before any contract function runs. This points to a general WASM runtime crash on the T3N testnet node rather than a Component Model compatibility issue. The error is not listed in the [T3N common errors](https://docs.terminal3.io/developers/adk/tips/common-errors) documentation.
+Both fail with the same opaque `HTTP 500: Internal error` at instantiation time, before any contract function runs. Notably, **contract registration succeeds** (`tenant.contracts.register()` returns contract_id 368 for v1.0.6) — the WASM binary is accepted and stored — but every subsequent execution attempt crashes during loading/instantiation. This points to a general WASM runtime crash on the T3N testnet node rather than a Component Model compatibility issue. The error is not listed in the [T3N common errors](https://docs.terminal3.io/developers/adk/tips/common-errors) documentation.
 
 ### Impact
 Blocking — the contract cannot execute any function, making the compliance pipeline non-functional on T3N testnet. `seed:policies`, `register-agent`, and all compliance evaluations all depend on contract execution.
@@ -80,10 +78,9 @@ Blocking — the contract cannot execute any function, making the compliance pip
 
 ### Recommended next steps for T3N team
 
-1. **Check testnet node for WASM Component Model support.** The binary encoding `0x0001000d` indicates a WASM Component (not a core module). If the runtime's WASM loader only supports core modules (wasip1), the node would reject valid Component binaries at instantiation time. Confirming `wasm32-wasip2` Component Model support on the testnet node would resolve this.
-2. **Try wasm32-wasip1** as a fallback target if the runtime does not support Component Model encoding.
-3. **Try a second region/node** — if `T3N_BASE_URL` supports alternate nodes, test whether a different node URL behaves differently.
-4. **Check server-side logs** for the request IDs below — the error is opaque to the client, but the node's internal logs would pinpoint the instantiation failure.
+1. **Check server-side WASM runtime logs.** Both wasm32-wasip2 (Component Model, contract_id 368) and wasm32-wasip1 (core module) fail identically at instantiation time — this rules out a Component Model compatibility issue. The crash is in the WASM loader/runtime itself, regardless of module format. Server-side logs for the request IDs below would pinpoint the exact instantiation failure.
+2. **Try a second region/node** — if `T3N_BASE_URL` supports alternate nodes, test whether a different node URL behaves differently.
+3. **Verify the node's WASM runtime supports the host interfaces** used by the contract (`host:tenant/tenant-context`, `host:interfaces/kv-store`, `host:interfaces/signing`, `host:interfaces/logging`, `host:interfaces/time`). A missing or mismatched host import would cause an instantiation crash.
 
 ### Status
 Unresolved. Requires investigation by the T3N team.
