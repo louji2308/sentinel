@@ -28,7 +28,8 @@ async function main() {
 
   console.log("\n=== Demo Complete ===");
   console.log("All compliance decisions recorded in TEE contract.");
-  console.log("View dashboard at http://localhost:3000/dashboard");
+  const dashboardUrl = process.env.DASHBOARD_URL || "http://localhost:3000";
+  console.log(`View dashboard at ${dashboardUrl}/dashboard`);
 }
 
 main().catch((err) => {

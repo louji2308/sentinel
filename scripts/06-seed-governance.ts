@@ -111,7 +111,8 @@ async function main() {
   console.log("\nGovernance data seeded successfully!");
   console.log(`  Proposals: ${proposals.length}`);
   console.log(`  Escalations: ${escalations.length}`);
-  console.log("\nView at http://localhost:3000/governance");
+  const dashboardUrl = process.env.DASHBOARD_URL || "http://localhost:3000";
+  console.log(`\nView at ${dashboardUrl}/governance`);
 }
 
 main().catch((err) => {

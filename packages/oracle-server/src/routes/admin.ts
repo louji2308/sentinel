@@ -4,7 +4,7 @@ import { callContractWithAdmin } from "../services/sentinelContract.js";
 import { registerAgent, getAgent, updateAgentStatus, getAllAgents } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
 import db, { recordSpendBatch } from "../services/db.js";
-import { notifyEscalation, notifySlack } from "../services/webhooks.js";
+import { notifyEscalation, notifySlack, getDashboardUrl } from "../services/webhooks.js";
 
 const RegisterSchema = z.object({
   agentDid: z.string().min(1),
@@ -175,7 +175,7 @@ router.post("/resolve-escalation", async (req, res) => {
       resolvedAt: Date.now(),
       resolution: decision,
       resolvedBy: "operator",
-      dashboardUrl: "http://localhost:3000/governance",
+      dashboardUrl: `${getDashboardUrl()}/governance`,
     }).catch(() => {});
     notifySlack({
       eventType: "escalation.resolved",
@@ -189,7 +189,7 @@ router.post("/resolve-escalation", async (req, res) => {
       resolvedAt: Date.now(),
       resolution: decision,
       resolvedBy: "operator",
-      dashboardUrl: "http://localhost:3000/governance",
+      dashboardUrl: `${getDashboardUrl()}/governance`,
     }).catch(() => {});
 
     const contractResult = await callContractWithAdmin("resolve-escalation", {

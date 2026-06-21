@@ -3,6 +3,10 @@ import crypto from "crypto";
 const WEBHOOK_URL = process.env.ESCALATE_WEBHOOK_URL;
 const WEBHOOK_SECRET = process.env.ESCALATE_WEBHOOK_SECRET;
 
+export function getDashboardUrl(): string {
+  return process.env.DASHBOARD_URL || "http://localhost:3000";
+}
+
 export interface EscalationEvent {
   eventType: "escalation.created" | "escalation.resolved";
   escalationId: string;

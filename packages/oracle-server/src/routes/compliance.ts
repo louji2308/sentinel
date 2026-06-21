@@ -6,7 +6,7 @@ import { evaluatePolicy } from "@sentinel/policy-engine";
 import { getAgent } from "../services/agentRegistry.js";
 import { appendEntry } from "../services/auditLog.js";
 import { getCumulativeSpend, recordSpendBatch, insertEscalation, getCachedResponse, setCachedResponse, upsertReceipt } from "../services/db.js";
-import { notifyEscalation, notifySlack } from "../services/webhooks.js";
+import { notifyEscalation, notifySlack, getDashboardUrl } from "../services/webhooks.js";
 
 const CheckSchema = z.object({
   agentDid: z.string().min(1),
@@ -165,7 +165,7 @@ router.post("/check", async (req, res, next) => {
         reason: policyResult.reason,
         status: "pending",
         createdAt: Date.now(),
-        dashboardUrl: `http://localhost:3000/governance`,
+        dashboardUrl: `${getDashboardUrl()}/governance`,
       }).catch(() => {});
       notifySlack({
         eventType: "escalation.created",
@@ -176,7 +176,7 @@ router.post("/check", async (req, res, next) => {
         reason: policyResult.reason,
         status: "pending",
         createdAt: Date.now(),
-        dashboardUrl: `http://localhost:3000/governance`,
+        dashboardUrl: `${getDashboardUrl()}/governance`,
       }).catch(() => {});
     }
 

@@ -27,7 +27,9 @@
     "seed:governance": "tsx scripts/06-seed-governance.ts",
     "view:governance": "tsx scripts/07-view-governance.ts",
     "verify:receipt": "tsx scripts/verify-receipt-standalone.ts",
-    "dry-run": "tsx -e \"import { runDryRun } from './packages/policy-engine/src/simulator.js'; console.log(JSON.stringify(runDryRun({ agentType: 'travel-booking', credentialStatus: 'active', action: 'book_flight', resourceType: 'TravelSystem', resourceDomain: 'travel', amount: 10000 }), null, 2))\""
+    "dry-run": "tsx -e \"import { runDryRun } from './packages/policy-engine/src/simulator.js'; console.log(JSON.stringify(runDryRun({ agentType: 'travel-booking', credentialStatus: 'active', action: 'book_flight', resourceType: 'TravelSystem', resourceDomain: 'travel', amount: 10000 }), null, 2))\"",
+    "test:policy": "npx tsx packages/policy-engine/src/smoke-test.ts",
+    "test": "npx tsx packages/policy-engine/src/smoke-test.ts"
   },
   "devDependencies": {
     "concurrently": "^8.2.0",

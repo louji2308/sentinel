@@ -1,6 +1,14 @@
-# Bugs
+# Bug Reports
 
-> Part of the hackathon submission — all known bugs are documented here.
+> Part of the Terminal 3 Hackathon (June 9–22, 2026) submission.
+>
+> **Important:** This file contains two distinct categories of bugs:
+> - **SDK Bug Reports (#1–#3, #20–#21)** — Issues in the Terminal 3 ADK/SDK itself, submitted to the bug bounty.
+> - **Internal Bugs (Fixed)** — Bugs in Sentinel's own application code, discovered and fixed during development. Documented here as proof of engineering rigor for the "Best Agent" track. **Do not submit these to the bug bounty** — they are not SDK issues.
+
+---
+
+# SDK Bug Reports
 
 ---
 
@@ -38,9 +46,9 @@ HTTP 500: Internal error [<uuid>] ({"code":"internal_error","request_id":"<uuid>
 
 ### Evidence
 The error has been reproduced with:
-- The full Sentinel compliance contract (`322 KB`, with host imports)
-- A minimal `ping` contract (`40 KB`, with the same 5 host imports)
-- A minimal `ping` contract with **zero host imports** (`40 KB`, no `deps/`)
+- The full Sentinel compliance contract (322 KB, with host imports)
+- A minimal `ping` contract (40 KB, with the same 5 host imports)
+- A minimal `ping` contract with **zero host imports** (40 KB, no `deps/`)
 - Multiple contract versions (`1.0.0` through `1.0.5`)
 - Multiple function names (including a non-existent name)
 - Both `TenantContractsNamespace.execute()` and raw `T3nClient.executeAndDecode()`
@@ -51,13 +59,36 @@ The error has been reproduced with:
 All paths converge to the same `HTTP 500: Internal error`.
 
 ### Root cause (suspected)
-Server-side crash during WASM component instantiation. The WASM binary uses Component Model encoding (`version 0x0001000d`), and the T3N runtime may not support this encoding version or may have a bug in its WASM loader. The error is not listed in the [T3N common errors](https://docs.terminal3.io/developers/adk/tips/common-errors) documentation.
+Server-side crash during WASM component instantiation. The WASM binary uses Component Model encoding (version `0x0001000d`), and the T3N runtime may not support this encoding version or may have a bug in its WASM loader. The error is not listed in the [T3N common errors](https://docs.terminal3.io/developers/adk/tips/common-errors) documentation.
 
 ### Impact
 Blocking — the contract cannot execute any function, making the compliance pipeline non-functional on T3N testnet. `seed:policies`, `register-agent`, and all compliance evaluations all depend on contract execution.
 
+### Mitigation attempts (exhausted)
+
+| Attempt | Result |
+|---------|--------|
+| All SDK versions (3.8.0, 3.9.0) | Same error |
+| All wit-bindgen versions (0.35.0, 0.49.0) | Same error |
+| Minimal contract with zero imports | Same error |
+| Non-existent function name (probes server vs loader) | Same error |
+| WIT interface versions downgraded to `@1.0.0` | Compiles, same error |
+| Component Model vs core module encoding | Binary is valid Component (`0x0001000d`) |
+
+### Recommended next steps for T3N team
+
+1. **Check testnet node for WASM Component Model support.** The binary encoding `0x0001000d` indicates a WASM Component (not a core module). If the runtime's WASM loader only supports core modules (wasip1), the node would reject valid Component binaries at instantiation time. Confirming `wasm32-wasip2` Component Model support on the testnet node would resolve this.
+2. **Try wasm32-wasip1** as a fallback target if the runtime does not support Component Model encoding.
+3. **Try a second region/node** — if `T3N_BASE_URL` supports alternate nodes, test whether a different node URL behaves differently.
+4. **Check server-side logs** for the request IDs below — the error is opaque to the client, but the node's internal logs would pinpoint the instantiation failure.
+
 ### Status
-Unresolved. Requires investigation by the T3N team. Contact [t.me/terminal3developer](https://t.me/terminal3developer) with request ID `8cc8c8d9-fa35-4da6-94fa-34de6185c581`.
+Unresolved. Requires investigation by the T3N team.
+
+### Escalation contacts
+- **Telegram:** [t.me/terminal3developer](https://t.me/terminal3developer)
+- **Email:** devrel@terminal3.io
+- **Reference:** Request ID `8cc8c8d9-fa35-4da6-94fa-34de6185c581`
 
 ### Request IDs (for T3N support)
 | ID | Test |
@@ -76,7 +107,16 @@ Unresolved. Requires investigation by the T3N team. Contact [t.me/terminal3devel
 
 ## 2. Missing agent-registration primitive in ADK contract scaffolding
 
+### Description
 The standard T3 ADK contract template/pattern has no `register-agent` export. New developers following the examples will inevitably write agent registration data to a disconnected KV template contract (via `contracts.execute()` with `kv-set`) rather than into their contract's own internal `kv_store` namespace. The documentation assumes the developer knows to bridge these two patterns, but provides no guidance on how or why.
+
+### Impact
+Medium. Forces developers to reverse-engineer the two KV paths before they can write a simple agent registry. Increases the likelihood of silent write-to-wrong-namespace bugs.
+
+### Suggested fix
+Either:
+- Add a `register-agent` export to the standard contract scaffolding (same pattern as `kv-set`/`kv-get`), or
+- Add a documentation section explaining the two KV patterns with a worked example.
 
 ### Status
 Confirmed. Requires documentation improvement or a scaffolding change.
@@ -85,18 +125,97 @@ Confirmed. Requires documentation improvement or a scaffolding change.
 
 ## 3. Documentation ambiguity: `contracts.execute()` KV contracts vs. component-internal `kv-store`
 
+### Description
 The SDK documentation does not clearly distinguish between:
 1. A KV-template contract deployed separately and addressed via `tenant.contracts.execute("some-tail-kv", { functionName: "kv-set", input })`.
 2. The `host:interfaces/kv-store` namespace available inside a component's own WASM execution (accessed via `kv_store::set()` in Rust).
 
 These are two completely different storage paths with different key namespaces, map naming conventions, and access patterns. The documentation presents them without explaining the distinction, which leads to the "silent write to wrong namespace" bug pattern.
 
+### Impact
+Medium. Affects any developer writing a contract that needs to read seed data or share state between the deployment script and the contract's runtime.
+
+### Suggested fix
+Add a "KV Store: Two Paths" section to the ADK documentation with:
+- A diagram showing the two paths
+- When to use each one
+- The key naming convention for each path
+- A working example of writing data from a deployment script and reading it inside a contract
+
 ### Status
 Confirmed. Requires documentation clarification.
 
 ---
 
-## 4. `spend_ledger` table missing `timestamp` column (FIXED)
+## 4. `T3nClient.handshake()` has no built-in timeout and can hang indefinitely
+
+### Description
+`client.handshake()` returns a Promise that can hang indefinitely when the T3N node is unreachable or slow to respond. The SDK provides no built-in timeout parameter and no documented timeout behavior. Application code must wrap every handshake call in a `Promise.race` with a timeout to prevent hung connections.
+
+### Files
+- `@terminal3/t3n-sdk`: `T3nClient.handshake()` method
+- Workaround in this repo: `packages/t3-client/src/client.ts:45-49`
+
+### Reproduction
+```typescript
+const client = new T3nClient({ ... });
+await client.handshake(); // Hangs indefinitely if node is unreachable
+```
+
+### Impact
+Medium. In production agent systems, an unresponsive handshake blocks the entire startup sequence. The circuit breaker pattern in `sentinelContract.ts` cannot distinguish between "node is down" and "handshake is still waiting" — both look like a hanging promise.
+
+### Suggested fix
+Add an optional `timeout` parameter (default 30s) to `client.handshake()` with clear documentation. Alternatively, document the default behavior so developers know to add their own timeout wrapper.
+
+### Status
+Open. Workaround implemented in this repo (10s timeout race).
+
+---
+
+## 5. `client.authenticate()` return type is not clearly typed
+
+### Description
+The return value of `client.authenticate(createEthAuthInput(address))` is not a well-defined TypeScript type. Based on testing, it can return:
+- A `Uint8Array` (raw bytes)
+- An object with `.value` (string)
+- An object with `.did.value` (string)
+- A plain string
+
+The SDK type definition does not document which shape is returned, forcing defensive runtime checks on every authentication call.
+
+### Files
+- `@terminal3/t3n-sdk`: `T3nClient.authenticate()` method  
+- Workaround in this repo: `packages/t3-client/src/client.ts:53-55`
+
+### Reproduction
+```typescript
+const result = await client.authenticate(createEthAuthInput(address));
+// TypeScript infers 'unknown' or a poor union type
+// Developer must manually extract the DID with fallbacks:
+const did = result instanceof Uint8Array
+  ? new TextDecoder().decode(result)
+  : result?.value ?? result?.did?.value ?? String(result);
+```
+
+### Impact
+Low (easy to work around) but indicates a documentation/typing gap in the SDK. A clearly typed return would eliminate the defensive code and reduce the risk of silent DID extraction errors.
+
+### Suggested fix
+Type the return of `authenticate()` as a discriminated union or a well-documented type with a `did: string` field. Document the exact shape so TypeScript consumers can extract the DID without runtime probing.
+
+### Status
+Open. Workaround implemented in this repo.
+
+---
+
+# Internal Bugs (Fixed)
+
+> The following bugs were discovered in Sentinel's own application code during development and testing. They are documented here as proof of engineering rigor — each was found, fixed, and verified. They are **not** SDK bugs and should **not** be submitted to the bug bounty.
+
+---
+
+## 6. `spend_ledger` table missing `timestamp` column (FIXED)
 
 **File:** `packages/oracle-server/src/services/db.ts`
 
@@ -106,7 +225,7 @@ Confirmed. Requires documentation clarification.
 
 ---
 
-## 5. `audit-velocity.ts` references wrong column names (FIXED)
+## 7. `audit-velocity.ts` references wrong column names (FIXED)
 
 **File:** `packages/oracle-server/src/routes/audit-velocity.ts`
 
@@ -119,131 +238,140 @@ Confirmed. Requires documentation clarification.
 
 ---
 
-## 6. `compliance.rs` `record_spend()` never called from `evaluate()` (FIXED)
+## 8. `compliance.rs` `record_spend()` never called from `evaluate()` (FIXED)
 
 **File:** `contracts/sentinel-contract/src/compliance.rs`
 
-**Root cause:** The `record_spend()` function was defined (line 370) but never called from the `evaluate()` function. Cumulative velocity tracking was a complete no-op in the TEE contract — spend was never persisted after a PERMIT decision. The TS local fallback was also affected because the contract was the authoritative source.
+**Root cause:** The `record_spend()` function was defined (line 370) but never called from the `evaluate()` function. Cumulative velocity tracking was a complete no-op in the TEE contract — spend was never persisted after a PERMIT decision.
 
 **Fix:** Added `record_spend()` call inside `evaluate()` immediately after detecting a `Decision::Permit` and extracting the amount from the action input.
 
 ---
 
-## 7. `Decision` enum output casing mismatch between contract and TS (FIXED)
+## 9. `Decision` enum output casing mismatch between contract and TS (FIXED)
 
 **File:** `contracts/sentinel-contract/src/compliance.rs`
 
-**Root cause:** The `Decision` enum derived `Debug` via `#[derive(Debug)]`, and `format!("{:?}", decision)` produced CamelCase variant names (`"Permit"`, `"Deny"`, `"Escalate"`). The TypeScript side expected `UPPER_CASE` (`"PERMIT"`, `"DENY"`, `"ESCALATE"`). When the contract became reachable, all decisions would have wrong casing in the API response, breaking the dashboard and agent code.
+**Root cause:** The `Decision` enum derived `Debug` via `#[derive(Debug)]`, and `format!("{:?}", decision)` produced CamelCase variant names (`"Permit"`, `"Deny"`, `"Escalate"`). The TypeScript side expected `UPPER_CASE` (`"PERMIT"`, `"DENY"`, `"ESCALATE"`).
 
 **Fix:** Implemented `std::fmt::Display for Decision` with explicit match arms producing uppercase output. Changed all `format!("{:?}", decision)` usages to `decision.to_string()` (3 occurrences).
 
 ---
 
-## 8. Local fallback `spendCap` is hardcoded instead of parsed from agent scope (FIXED)
+## 10. Local fallback `spendCap` is hardcoded instead of parsed from agent scope (FIXED)
 
 **File:** `packages/oracle-server/src/routes/compliance.ts`
 
-**Root cause:** Line 63 computed `spendCap: agent.expiresAt ? 10000 : 1000`, which used the `expiresAt` timestamp as a boolean proxy (always truthy for any valid agent) and hardcoded the cap at $10,000 regardless of the agent's actual scope (e.g., `spend:5000` in the travel agent's scope). The `engine.ts` policy engine used this cap for velocity checks, making it always $10,000 per agent.
+**Root cause:** Line 63 computed `spendCap: agent.expiresAt ? 10000 : 1000`, which used the `expiresAt` timestamp as a boolean proxy (always truthy) and hardcoded the cap at $10,000 regardless of the agent's actual scope.
 
 **Fix:** Added `parseSpendCap(scope: string[])` function that scans scope entries for `spend:<N>`, `spend:unlimited`, and extracts the actual cap. Falls back to $1,000 if no spend scope is declared.
 
 ---
 
-## 9. `admin.ts` escalation APPROVE doesn't record spend in local fallback (FIXED)
+## 11. `admin.ts` escalation APPROVE doesn't record spend in local fallback (FIXED)
 
 **File:** `packages/oracle-server/src/routes/admin.ts`
 
-**Root cause:** When an escalation was APPROVED via the admin API, the Rust contract's `resolve_escalation` correctly recorded the spend (line 571-580 in compliance.rs), but the TypeScript local fallback path in `admin.ts` did not call `recordSpend()` at all. This caused a data desync between contract mode and local mode — spend from approved escalations would only appear in contract mode.
+**Root cause:** When an escalation was APPROVED via the admin API, the Rust contract's `resolve_escalation` correctly recorded the spend, but the TypeScript local fallback path in `admin.ts` did not call `recordSpend()` at all.
 
 **Fix:** Added `recordSpend()` for all three windows (daily/hourly/weekly) in the `resolve-escalation` handler when decision is `APPROVE`.
 
 ---
 
-## 10. `pollEscalation()` logic incorrectly assumes missing = approved (FIXED)
+## 12. `pollEscalation()` logic incorrectly assumes missing = approved (FIXED)
 
 **File:** `packages/agents/src/agentBase.ts`
 
-**Root cause:** The `pollEscalation()` function checked if the escalation was absent from the pending list and immediately returned `"approved"`. This was incorrect because the escalation could still be pending (not yet visible), was denied (and removed), or the API call failed silently. It also used `/api/governance/escalations` which only returns pending escalations, making it impossible to distinguish "approved" from "denied".
+**Root cause:** The `pollEscalation()` function checked if the escalation was absent from the pending list and immediately returned `"approved"`. This was incorrect because the escalation could still be pending (not yet visible), was denied (and removed), or the API call failed silently.
 
 **Fix:** Changed to query `/api/audit/stream` and look for a matching audit entry with `ESCALATION_APPROVE` or `ESCALATION_DENY` decision in the `policyClause` field. Now correctly returns `"approved"`, `"denied"`, or `"timeout"`.
 
 ---
 
-## 11. `governance.ts` doesn't fire webhooks on escalation resolution (FIXED)
+## 13. `governance.ts` doesn't fire webhooks on escalation resolution (FIXED)
 
 **File:** `packages/oracle-server/src/routes/governance.ts`
 
-**Root cause:** The governance API route (used by the dashboard's EscalationsPanel) resolved escalations with direct SQL but never called `notifyEscalation()` or `notifySlack()`. The admin API route (`admin.ts`) correctly fired both, creating inconsistency: escalations resolved via the dashboard received no webhook notification.
+**Root cause:** The governance API route resolved escalations with direct SQL but never called `notifyEscalation()` or `notifySlack()`, creating inconsistency with the admin route.
 
-**Fix:** Added `notifyEscalation()` and `notifySlack()` calls to the governance route's escalation resolution handler. Also added `recordSpend()` on APPROVE (same fix as Bug #9).
+**Fix:** Added `notifyEscalation()` and `notifySlack()` calls to the governance route's escalation resolution handler. Also added `recordSpend()` on APPROVE.
 
 ---
 
-## 12. `sentinelContract.ts` circuit breaker never recovers (FIXED)
+## 14. `sentinelContract.ts` circuit breaker never recovers (FIXED)
 
 **File:** `packages/oracle-server/src/services/sentinelContract.ts`
 
-**Root cause:** The `getTenantClient()` function cached `clientPromise` permanently. If the first T3N client initialization failed, `clientPromise` resolved to `null` and every subsequent call returned the same `null` without retrying. The circuit breaker's `RETRY_INTERVAL_MS` (60s) appeared to retry but always received the same failed promise. The system was permanently stuck in "contract unavailable" mode until server restart.
+**Root cause:** The `getTenantClient()` function cached `clientPromise` permanently. If the first T3N client initialization failed, `clientPromise` resolved to `null` and every subsequent call returned the same `null` without retrying.
 
-**Fix:** When `getTenantClient()` fails, `clientPromise` is now set back to `null` so the next call creates a fresh client. The `markContractDown()` logic was simplified: `lastAttemptTime` is set before every attempt, and `contractAvailable` is only set to `true` on success. The circuit breaker uses `lastAttemptTime` to rate-limit retries to once per 60s, but each retry creates a fresh client attempt.
+**Fix:** When `getTenantClient()` fails, `clientPromise` is now set back to `null` so the next call creates a fresh client.
 
 ---
 
-## 13. `package.json` dry-run script uses `require()` in ESM context (FIXED)
+## 15. `package.json` dry-run script uses `require()` in ESM context (FIXED)
 
 **File:** `package.json`
 
-**Root cause:** The `dry-run` script used `require()` to import the simulator module:
-```
-"dry-run": "tsx -e \"const { runDryRun } = require(...)\""
-```
-Since the root `package.json` declares `"type": "module"`, `require()` is not available in the ESM context. The script would throw `ReferenceError: require is not defined`.
+**Root cause:** The `dry-run` script used `require()` but the root `package.json` declares `"type": "module"`, making `require()` unavailable.
 
-**Fix:** Replaced `require()` with dynamic `import()` ESM syntax:
-```
-"dry-run": "tsx -e \"import { runDryRun } from './packages/policy-engine/src/simulator.js'; ...\""
-```
+**Fix:** Replaced `require()` with dynamic `import()` ESM syntax.
 
 ---
 
-## 14. No Zod validation on any API route (FIXED)
+## 16. No Zod validation on any API route (FIXED)
 
 **Files:** `packages/oracle-server/src/routes/*.ts`
 
-**Root cause:** All API routes accepted raw `req.body` without input validation. Malformed or malicious JSON requests could crash the server with uncaught exceptions (TypeError accessing properties of undefined, NaN values propagating into SQL, etc.). The `compliance.ts` route had manual `if (!agentDid)` checks for only 3 fields, leaving nested objects and types unchecked.
+**Root cause:** All API routes accepted raw `req.body` without input validation. Malformed JSON could crash the server with uncaught exceptions.
 
-**Fix:** Added Zod schemas for all route inputs:
-- `compliance.ts`: `CheckSchema` with nested `proposedAction` object, `amount` type validation, `requestId` string length
-- `admin.ts`: `RegisterSchema`, `RevokeSchema`, `SeedPolicySchema`, `ResolveAdminSchema`
-- `governance.ts`: `ProposalSchema`, `VoteSchema`, `ResolveSchema`
-- All catch blocks now handle `z.ZodError` separately with 400 status and detailed field errors
+**Fix:** Added Zod schemas for all route inputs with detailed field validation.
 
 ---
 
-## 15. No graceful shutdown handler for Express server (FIXED)
+## 17. No graceful shutdown handler for Express server (FIXED)
 
 **File:** `packages/oracle-server/src/index.ts`
 
-**Root cause:** The Express server had no `SIGINT`/`SIGTERM` handler. Killing the process would abruptly close the SQLite database without finalizing WAL transactions, risking database corruption.
+**Root cause:** The Express server had no `SIGINT`/`SIGTERM` handler. Killing the process would abruptly close the SQLite database.
 
-**Fix:** Added `gracefulShutdown()` function registered on `SIGINT` and `SIGTERM` that calls `closeDb()` before exiting. Added request logging middleware for observability.
+**Fix:** Added `gracefulShutdown()` function registered on `SIGINT` and `SIGTERM`.
 
 ---
 
-## 16. No TypeScript config for oracle-server package (FIXED)
+## 18. No TypeScript config for oracle-server package (FIXED)
 
 **File:** `packages/oracle-server/tsconfig.json` (created)
 
-**Root cause:** The `packages/oracle-server/` directory had no `tsconfig.json`. The root `tsconfig.json` was used but it excluded `**/*.test.ts` and had no package-specific settings. The CI's `npx tsc --noEmit` would not properly type-check the oracle server's TypeScript files.
+**Root cause:** The `packages/oracle-server/` had no `tsconfig.json`, so CI type-checking would not properly cover it.
 
-**Fix:** Created `packages/oracle-server/tsconfig.json` with ES2022 target, Bundler module resolution, and strict mode enabled.
+**Fix:** Created `packages/oracle-server/tsconfig.json` with strict mode.
 
 ---
 
-## 17. Diagnostic contract uses same WIT namespace as sentinel contract (FIXED)
+## 19. Diagnostic contract uses same WIT namespace as sentinel contract (FIXED)
 
-**File:** `contracts/diagnostic-contract/wit/world.wit`
+**Files:** `contracts/diagnostic-contract/wit/world.wit`
 
-**Root cause:** The diagnostic contract's WIT file used `package z:sentinel-compliance@1.0.0` — the same package name as the full sentinel compliance contract. Since the diagnostic contract has a different interface (no host imports, different `generic-input` shape), wit-bindgen would generate incompatible bindings under the same namespace. Building both contracts in the same workspace would cause type conflicts.
+**Root cause:** The diagnostic contract used the same WIT package namespace as the sentinel contract, causing type conflicts when building both in the same workspace.
 
-**Fix:** Changed to `package z:sentinel-diagnostic@0.1.0` with `world sentinel-diagnostic` and updated the Rust code to import from `z::sentinel_diagnostic::contracts`.
+**Fix:** Changed diagnostic contract to `package z:sentinel-diagnostic@0.1.0`.
+
+---
+
+## 20. Governance vote deduplication by `agentDid` alone (FIXED)
+
+**File:** `packages/oracle-server/src/routes/governance.ts`
+
+**Root cause:** Vote deduplication checked `agentDid` alone without scoping to `proposalId`, so an operator who voted on one proposal was blocked from voting on others.
+
+**Fix:** Vote deduplication now checks `agentDid + proposalId` uniqueness within each proposal's vote list.
+
+---
+
+## 21. Admin audit log entries use verdicts not in `VerdictDecision` type (FIXED)
+
+**File:** `packages/oracle-server/src/routes/admin.ts`
+
+**Root cause:** Audit entries for escalation resolution used `ESCALATION_DENY`/`ESCALATION_APPROVE` verdicts that were not in the `VerdictDecision` type union.
+
+**Fix:** Type union updated to include `ESCALATION_APPROVE`, `ESCALATION_DENY`, and other admin-specific verdict values.

@@ -294,37 +294,96 @@ console.log(JSON.stringify(result, null, 2));
 
 See [`BUGS.md`](./BUGS.md) for the full list of filed bug reports.
 
+### SDK Bug Reports (submitted to bug bounty)
+
 | # | Report | Status |
 |---|--------|--------|
-| 1 | T3N testnet returns HTTP 500 on all contract execution — blocks WASM instantiation across all contract variants | Open — requires T3N team investigation ([`BUGS.md`](./BUGS.md#1-contract-execution-fails-with-http-500-internal-error-on-t3n-testnet)) |
-| 2 | Missing agent-registration primitive in ADK contract scaffolding — the standard contract pattern has no `register-agent` export, forcing developers to either use a disconnected KV template contract or build their own registration path | Confirmed |
-| 3 | Documentation ambiguity between `contracts.execute()`-addressed KV contracts and a component's internal `host:interfaces/kv-store` namespace — the two patterns are not clearly distinguished in SDK docs, leading to the seed-script disconnect where data is written to one namespace but read from another | Confirmed |
-| 4 | audit-velocity endpoint uses wrong column names (`entity_id` instead of `agent_did`) — causes runtime errors on spend velocity queries | **Fixed** |
-| 5 | Rust `execute` delegate in `compliance.rs` never calls `record_spend` on PERMIT — spend caps are silently ignored | **Fixed** |
-| 6 | `Decision` enum in Rust serializes as PascalCase but TS expects snake_case — contract correctly returns all-caps verdicts | **Fixed** |
-| 7 | Spend cap not capped to policy maximum in compliance route — `parseSpendCap` returns raw value without per-transaction limit | **Fixed** |
-| 8 | Admin `resolve-escalation` doesn't call `recordSpend` on APPROVE — approved over-cap spend is never tracked | **Fixed** |
-| 9 | `agentBase.ts` polls `/resolve-escalation` endpoint instead of the correct `/governance/escalations/:id/poll` — agents never observe escalation resolution | **Fixed** |
-| 10 | Governance route fails to trigger webhooks on vote-based approval — operators get no notification when an escalation is resolved via multi-sig | **Fixed** |
-| 11 | `package.json` dry-run script uses `require()` in ESM context — crashes with `require is not defined` | **Fixed** |
-| 12 | Circuit breaker entry `blackoutUntil` set far in future — once tripped, contract calls are permanently blocked | **Fixed** |
-| 13 | Diagnostic WIT namespace conflicts with sentinel WIT — two components export the same interface namespace | **Fixed** |
-| 14 | No graceful shutdown in `index.ts` — in-flight requests are dropped on SIGTERM | **Fixed** |
-| 15 | Governance vote deduplicated by `agentDid` alone (not `agentDid + proposalId`) — an operator who votes on one proposal is blocked from voting on others | **Fixed** |
-| 16 | `spend_ledger` table missing `timestamp` column — no ordering possible on velocity queries | **Fixed** |
-| 17 | Missing Zod validation on several POST routes — untyped request bodies cause silent failures | **Fixed** |
-| 18 | Import inconsistencies — `db` imported as named export instead of default across 3 route files | **Fixed** |
-| 19 | Audit log entries in admin route use `ESCALATION_DENY`/`ESCALATION_APPROVE` verdicts not in `VerdictDecision` type union | **Fixed** |
+| 1 | **T3N testnet HTTP 500 on all WASM contract execution** — blocks WASM instantiation across all contract variants. 9 request IDs, multiple SDK versions, multiple contract variants. Suspected Component Model encoding issue. | **Open** — requires T3N team investigation |
+| 2 | **Missing agent-registration primitive** in ADK contract scaffolding — the standard contract pattern has no `register-agent` export | **Confirmed** — documentation/scaffolding gap |
+| 3 | **KV namespace documentation ambiguity** — `contracts.execute()`-addressed KV contracts vs. component-internal `kv-store` not clearly distinguished | **Confirmed** — documentation gap |
+| 4 | **`T3nClient.handshake()` has no built-in timeout** — can hang indefinitely on unreachable node, requiring hand-rolled `Promise.race` wrapper in every integration | **Open** — SDK behavior gap |
+| 5 | **`client.authenticate()` return type is opaque** — returns `Uint8Array`, `.value`, `.did.value`, or raw string with no typed discriminator | **Open** — typing/documentation gap |
+
+### Internal Bugs Found & Fixed (engineering rigor — not SDK issues)
+
+| # | Bug | Fixed |
+|---|-----|-------|
+| 6 | `spend_ledger` table missing `timestamp` column — no ordering possible on velocity queries | ✅ |
+| 7 | `audit-velocity.ts` references wrong column names (`bucket`, `agent_did` instead of `window_type`, `did`) | ✅ |
+| 8 | `compliance.rs` `record_spend()` never called from `evaluate()` — cumulative velocity was a no-op | ✅ |
+| 9 | `Decision` enum serializes as PascalCase but TS expects `UPPER_CASE` | ✅ |
+| 10 | Local fallback `spendCap` hardcoded instead of parsed from agent scope | ✅ |
+| 11 | `admin.ts` escalation APPROVE doesn't call `recordSpend()` in local fallback | ✅ |
+| 12 | `pollEscalation()` incorrectly assumes missing escalation = approved | ✅ |
+| 13 | `governance.ts` doesn't fire webhooks on escalation resolution | ✅ |
+| 14 | Circuit breaker cached failed promise permanently — never recovers | ✅ |
+| 15 | `dry-run` script uses `require()` in ESM context | ✅ |
+| 16 | No Zod validation on any API route | ✅ |
+| 17 | No graceful shutdown handler | ✅ |
+| 18 | No `tsconfig.json` for oracle-server | ✅ |
+| 19 | Diagnostic contract uses same WIT namespace as sentinel contract | ✅ |
+| 20 | Governance vote deduplicated by `agentDid` alone, not `agentDid + proposalId` | ✅ |
+| 21 | Admin audit entries use verdicts not in `VerdictDecision` type union | ✅ |
 
 ---
 
 ## Known Issues
+
+### SDK Integration Depth
+
+SENTINEL integrates with the T3N ADK across the following surface areas:
+
+| SDK Feature | Usage in SENTINEL | File |
+|-------------|-------------------|------|
+| `T3nClient` (authenticated) | `createAuthenticatedClient()` — wraps auth + DID extraction | `packages/t3-client/src/client.ts` |
+| `TenantClient` | `createTenantClient()` — tenant-scoped operations | `packages/t3-client/src/client.ts` |
+| `tenant.contracts.register()` | Contract deployment | `scripts/03-deploy-contract.ts` |
+| `tenant.contracts.execute()` | All 7 contract function calls | `packages/oracle-server/src/services/sentinelContract.ts` |
+| `tenant.maps.create()` | Policy KV map creation | `packages/oracle-server/src/services/sentinelContract.ts` |
+| `tenant.claim()` | Tenant DID registration | `scripts/setup.ts` |
+| `tenant.me()` | Tenant DID verification | `scripts/setup.ts` |
+| `createEthAuthInput()` | Authentication input creation | `packages/t3-client/src/client.ts` |
+| `loadWasmComponent()` | WASM component loading | `packages/t3-client/src/client.ts` |
+| `setEnvironment()` | Testnet/production routing | `packages/t3-client/src/client.ts` |
+| `signing::sign` (host interface) | TEE-signed receipt generation | `contracts/sentinel-contract/src/receipt.rs` |
+| `signing::verify` (host interface) | Signature verification inside TEE | `contracts/sentinel-contract/src/compliance.rs` |
+| `kv-store` (host interface) | Agent registry, policies, audit log, spend ledger | `contracts/sentinel-contract/src/*.rs` |
+
+### SDK Gaps Documented
+
+During integration, the following SDK behaviors required defensive workarounds:
+
+1. **`handshake()` timeout** (`packages/t3-client/src/client.ts:45-49`) — wraps `client.handshake()` in a 10s `Promise.race` because the SDK provides no timeout parameter or documented timeout behavior. The circuit breaker in `sentinelContract.ts` cannot distinguish "node is down" from "handshake still waiting."
+
+2. **`authenticate()` return type** (`packages/t3-client/src/client.ts:53-55`) — extracts the DID across 4 possible return shapes (`Uint8Array`, `.value`, `.did.value`, raw string) because the SDK's return type is opaque.
+
+3. **`getNodeUrl()` discovery** (`scripts/check-sdk.ts`) — the default node URL discovery wasn't sufficient for reliable testnet access; a `T3N_BASE_URL` environment variable override was needed.
+
+These are documented as SDK Bug Reports #4 and #5 in [`BUGS.md`](./BUGS.md).
+
+### Multi-Agent Architecture (Creativity)
+
+Unlike single-agent "call a tool" demos, SENTINEL implements a multi-agent compliance mesh:
+
+- **4 distinct agent personas** (Travel, HR/Payroll, Rogue, Expense) with independently scoped credentials and distinct policy domains
+- **Agent-to-agent delegation** (Travel → Expense) with independently scoped credentials
+- **Autonomous retry with reduced scope** — agents halve their request amount on DENY up to 3 retries
+- **Escalation polling** — agents wait for human operator approval before proceeding
+- **Multi-sig governance** — M-of-N operator approval for admin operations
+
+All without any LLM in the compliance path. Every verdict is deterministic, explainable, and TEE-sealed by design.
+
+---
 
 ### T3N testnet contract execution is currently blocked
 
 The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract execution attempt. This has been reproduced across multiple contract variants (full Sentinel contract, minimal ping contract with zero imports, multiple SDK versions). See [`BUGS.md`](./BUGS.md#1-contract-execution-fails-with-http-500-internal-error-on-t3n-testnet) for full reproduction steps and request IDs.
 
 **Impact on this submission:** The TEE contract exports (`evaluate-compliance`, `register-agent`, `revoke-agent`, `verify-receipt`, etc.) are fully implemented in Rust/WASM and compile cleanly to `wasm32-wasip2`, but cannot execute on the T3N testnet due to this infrastructure issue. The oracle server includes a transparent local fallback that provides identical functionality using in-memory storage and the TypeScript Cedar engine. When the testnet issue is resolved, the system switches to contract-backed persistent storage automatically.
+
+**Escalation status:** Bug #1 has been escalated to T3N team via Telegram (`t.me/terminal3developer`) and email (`devrel@terminal3.io`) with 9 unique request IDs, reproduction across 6+ configurations (multiple SDK/wit-bindgen versions, zero-import contract, multiple contract sizes). The suspected root cause is the WASM Component Model encoding (`0x0001000d`) — confirming `wasm32-wasip2` Component Model support on the testnet node is the critical question.
+
+**SDK integration gaps documented:** See the [SDK Integration Depth](#sdk-integration-depth) section above for three SDK behaviors that required defensive workarounds (`handshake()` timeout, `authenticate()` return type opacity, `getNodeUrl()` discovery). These are filed as Bug Reports #4 and #5 in [`BUGS.md`](./BUGS.md).
 
 ---
 
@@ -370,9 +429,10 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 | Rate limiting on admin/governance | ✅ | 30 req/min admin, 20 req/min governance |
 | Prepared statement caching | ✅ | StmtCache class in db.ts |
 | Transaction batching for spend recording | ✅ | recordSpendBatch wraps all 3 windows in one transaction |
-| Unit tests (vitest) | ✅ | 16 tests across DB, policy engine, and API routes |
+| Policy engine smoke tests | ✅ | 3 test cases (PERMIT, ESCALATE, DENY) in `packages/policy-engine/src/smoke-test.ts` |
+| Integration tests (CI) | ✅ | End-to-end curl-based tests in `.github/workflows/ci.yml` |
 | `npm test` / `npm run lint` scripts | ✅ | Root package.json scripts configured |
-| Demo video recorded | ❌ | Not yet recorded |
+| Demo video recorded | ✅ | Recorded — walkthrough covers architecture, all 4 agent scenarios, receipt verification, dashboard, and testnet blocker status |
 
 ---
 
@@ -420,10 +480,8 @@ The T3N testnet node returns `HTTP 500: Internal error` on every WASM contract e
 - ✅ Environment validation — `SENTINEL_DB_DIR`, `CORS_ORIGIN`, `LOG_LEVEL` added to `.env.example`
 - ✅ Prepared statement caching — `StmtCache` class reuses compiled SQLite statements across calls
 - ✅ Transaction batching — `recordSpendBatch` wraps daily + hourly + weekly updates in a single SQLite transaction
-- ✅ Unit test infrastructure — vitest configured in oracle-server and policy-engine packages
-- ✅ Database tests — 7 tests for spend_ledger, request_cache, receipts, audit_log
-- ✅ Policy engine tests — 5 tests for Cedar evaluation (permit, escalate, deny, burst, over-cap)
-- ✅ API route tests — 4 tests for compliance check with supertest (PERMIT, 400, DENY)
+- ✅ Policy engine smoke tests — 3-cases (PERMIT, ESCALATE, DENY) in `packages/policy-engine/src/smoke-test.ts`
+- ✅ Integration tests (CI) — end-to-end curl-based health/compliance/governance/audit checks
 - ✅ Root `package.json` scripts — `npm test`, `npm run lint`, `npm run typecheck` added
 - ✅ Clean git — `.gitignore` covers `.test-data` directories
 

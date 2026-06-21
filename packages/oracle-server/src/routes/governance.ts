@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { z } from "zod";
 import db, { getPendingProposals, getPendingEscalations, recordSpend } from "../services/db.js";
 import { appendEntry } from "../services/auditLog.js";
-import { notifyEscalation, notifySlack } from "../services/webhooks.js";
+import { notifyEscalation, notifySlack, getDashboardUrl } from "../services/webhooks.js";
 
 const router = Router();
 
@@ -146,7 +146,7 @@ router.post("/escalations/:id/resolve", (req, res) => {
       resolvedAt: now,
       resolution: decision,
       resolvedBy: "governance",
-      dashboardUrl: "http://localhost:3000/governance",
+      dashboardUrl: `${getDashboardUrl()}/governance`,
     }).catch(() => {});
     notifySlack({
       eventType: "escalation.resolved",
@@ -160,7 +160,7 @@ router.post("/escalations/:id/resolve", (req, res) => {
       resolvedAt: now,
       resolution: decision,
       resolvedBy: "governance",
-      dashboardUrl: "http://localhost:3000/governance",
+      dashboardUrl: `${getDashboardUrl()}/governance`,
     }).catch(() => {});
 
     res.json({ escalationId: id, status, resolved: true });
