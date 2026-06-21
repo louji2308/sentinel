@@ -11,3 +11,4 @@ data/
 *.db-wal
 *.db-shm
 .test-data/
+*.tsbuildinfo
