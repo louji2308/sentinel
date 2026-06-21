@@ -11,7 +11,7 @@ services:
       - key: ORACLE_PORT
         value: "3001"
       - key: CORS_ORIGIN
-        value: https://sentinel-dashboard.vercel.app
+        value: https://sentinel-plum-five.vercel.app
       - key: SENTINEL_DB_DIR
         value: /data
     disk:

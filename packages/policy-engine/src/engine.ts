@@ -11,19 +11,17 @@ export const CEDAR_POLICIES: Record<string, string> = {
       resource is TravelSystem
     ) when {
       principal.credentialStatus == "active" &&
-      principal.spendCap <= 10000 &&
-      context.hourOfDay >= 9 &&
-      context.hourOfDay < 17 &&
-      ["Mon", "Tue", "Wed", "Thu", "Fri"].contains(context.dayOfWeek)
+      principal.spendCap <= 10000
     };
 
-    @id("travel-agent-forbid-night")
-    forbid (
+    @id("travel-agent-permit-payment")
+    permit (
       principal is Agent,
-      action in [Action::"book_flight"],
-      resource is TravelSystem
+      action in [Action::"execute_payment"],
+      resource is PaymentRail
     ) when {
-      context.hourOfDay < 9 || context.hourOfDay >= 17
+      principal.credentialStatus == "active" &&
+      resource.amount <= principal.spendCap
     };
 
     @id("travel-agent-forbid-overspend")
@@ -55,6 +53,27 @@ export const CEDAR_POLICIES: Record<string, string> = {
       resource is ExternalPaymentRail
     ) when {
       !(["finance", "hr", "payroll"].contains(resource.domain))
+    };
+  `,
+
+  "expense-processing": `
+    @id("expense-agent-permit")
+    permit (
+      principal is Agent,
+      action in [Action::"submit_expense"],
+      resource
+    ) when {
+      principal.credentialStatus == "active" &&
+      principal.credentialType == "expense-processing"
+    };
+
+    @id("expense-agent-forbid-external")
+    forbid (
+      principal is Agent,
+      action in [Action::"submit_expense"],
+      resource is ExternalPaymentRail
+    ) when {
+      resource.amount > principal.spendCap
     };
   `,
 

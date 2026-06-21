@@ -1,4 +1,5 @@
 import "dotenv/config";
+import crypto from "crypto";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -16,7 +17,7 @@ import { logger } from "./lib/logger.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { requestId } from "./middleware/requestId.js";
 import { rateLimiter } from "./middleware/rateLimit.js";
-import { closeDb, periodicCleanup } from "./services/db.js";
+import { closeDb, periodicCleanup, insertEscalation, insertProposal, getPendingEscalations, getPendingProposals } from "./services/db.js";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || process.env.ORACLE_PORT || "3001", 10);
@@ -52,7 +53,7 @@ function seedLocalStores() {
   const agents = [
     {
       did: "did:t3n:travel-agent-demo",
-      credentialScope: ["spend:5000", "domain:flights,hotels,trains"],
+      credentialScope: ["spend:10000", "domain:flights,hotels,trains"],
       credentialStatus: "active" as const,
       credentialType: "travel-booking",
       issuedAt: now - 7 * day,
@@ -91,6 +92,58 @@ function seedLocalStores() {
     action: { type: "execute_payment", resource: "FinanceSystem", amount: 50000 },
     receiptId: "RCP-demo-permit-2",
   });
+
+  if (getPendingEscalations().length === 0) {
+    const mkId = (p: string) => `${p}-${crypto.randomBytes(8).toString("hex")}`;
+
+    const escalations = [
+      {
+        escalationId: mkId("ESC"), agentDid: "did:t3n:travel-agent-demo",
+        requestId: `req-seed-${now}-1`,
+        action: { type: "book_flight", resource: "FlightSystem", amount: 4500, metadata: { domain: "travel" } },
+        amount: 4500,
+        reason: "Booking amount $4,500 exceeds agent spend cap of $5,000 at 90% threshold. Escalating for operator review.",
+      },
+      {
+        escalationId: mkId("ESC"), agentDid: "did:t3n:expense-agent-demo",
+        requestId: `req-seed-${now}-2`,
+        action: { type: "submit_expense", resource: "ExpenseSystem", amount: 4200, metadata: { domain: "expense" } },
+        amount: 4200,
+        reason: "Expense submission $4,200 is near the $5,000 spend cap. Requires human approval before processing.",
+      },
+      {
+        escalationId: mkId("ESC"), agentDid: "did:t3n:hr-payroll-demo",
+        requestId: `req-seed-${now}-3`,
+        action: { type: "execute_payment", resource: "PaymentRail", amount: 85000, metadata: { domain: "payroll" } },
+        amount: 85000,
+        reason: "Payroll run $85,000 exceeds hourly burst threshold. Operator review required before processing.",
+      },
+    ];
+    for (const esc of escalations) insertEscalation(esc);
+    logger.info({ count: escalations.length }, "Seeded pending escalations");
+  }
+
+  if (getPendingProposals().length === 0) {
+    const mkId = (p: string) => `${p}-${crypto.randomBytes(8).toString("hex")}`;
+    const DAY_MS = 86400000;
+
+    const proposals = [
+      {
+        proposalId: mkId("PROP"), action: "revoke_agent",
+        targetId: "did:t3n:rogue-agent-demo", decision: "APPROVE",
+        requiredVotes: 2, votes: [], status: "pending",
+        createdAt: now * 1000, expiresAt: now * 1000 + 7 * DAY_MS,
+      },
+      {
+        proposalId: mkId("PROP"), action: "update_spend_limit",
+        targetId: "did:t3n:hr-payroll-demo", decision: "APPROVE",
+        requiredVotes: 3, votes: [], status: "pending",
+        createdAt: now * 1000, expiresAt: now * 1000 + 7 * DAY_MS,
+      },
+    ];
+    for (const prop of proposals) insertProposal(prop);
+    logger.info({ count: proposals.length }, "Seeded governance proposals");
+  }
 }
 
 async function trySeedContract() {
@@ -101,7 +154,7 @@ async function trySeedContract() {
     {
       agentDid: "did:t3n:travel-agent-demo",
       agentType: "travel-booking",
-      scope: ["spend:5000", "domain:flights,hotels,trains"],
+      scope: ["spend:10000", "domain:flights,hotels,trains"],
       issuedAt: now - 7 * day,
       expiresAt: now + 30 * day,
     },

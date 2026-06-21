@@ -18,8 +18,8 @@ export function getLog(): AuditLogEntry[] {
   return getAuditLog(0, 500) as unknown as AuditLogEntry[];
 }
 
-export function getLogSince(timestamp: number): AuditLogEntry[] {
-  return getAuditLog(timestamp, 200) as unknown as AuditLogEntry[];
+export function getLogSince(timestamp: number, limit = 200): AuditLogEntry[] {
+  return getAuditLog(timestamp, limit) as unknown as AuditLogEntry[];
 }
 
 export function findEntry(receiptId: string): AuditLogEntry | undefined {

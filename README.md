@@ -440,7 +440,7 @@ Five reports filed against the T3N SDK and ADK documentation — full reproducti
 ## Submission Assets
 
 - **Demo video:** [Watch on YouTube](https://www.youtube.com/watch?v=8YU3mrxh4Os)
-- **Live deployment:** the oracle ships with a Render manifest (`render.yaml`, health check at `/api/health`, persistent disk for SQLite); the dashboard's CORS configuration assumes a Vercel deployment. `[ add live URLs here once deployed ]`
+- **Live deployment:** [Dashboard (Vercel)](https://sentinel-plum-five.vercel.app/) — [Oracle (Render)](https://sentinel-72zz.onrender.com)
 - **Bug bounty submissions:** [`BUGS.md`](./BUGS.md)
 
 ---

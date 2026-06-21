@@ -22,7 +22,8 @@ router.get("/stream", async (req, res) => {
     }
 
     // Fallback: local audit log
-    const localEntries = getLogSince(since);
+    const logLimit = req.query.limit ? parseInt(req.query.limit as string, 10) : 2000;
+    const localEntries = getLogSince(since, logLimit);
     res.json({
       entries: localEntries.map((e) => ({
         id: e.id,

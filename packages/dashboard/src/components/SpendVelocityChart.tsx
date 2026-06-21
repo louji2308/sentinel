@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Card } from "./ui";
+import { fetchVelocity } from "../lib/api";
 
 interface VelocityData {
   agentDid: string;
@@ -20,10 +21,7 @@ export function SpendVelocityChart({ agentDid }: { agentDid: string }) {
   const [data, setData] = useState<VelocityData | null>(null);
 
   useEffect(() => {
-    fetch(`/api/audit/velocity/${encodeURIComponent(agentDid)}`)
-      .then(r => r.json())
-      .then(setData)
-      .catch(() => {});
+    fetchVelocity(agentDid).then(setData);
   }, [agentDid]);
 
   if (!data) return null;
